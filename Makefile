@@ -33,7 +33,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -v $(CURDIR):/workspace \
               -v $(CURDIR)/hf_cache:/root/.cache/huggingface
 
-.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips download_tracking_captions preprocess_sn_tracking verify_sn_tracking train_tracking inference_tracking clean
+.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips download_tracking_captions download_all_tracking preprocess_sn_tracking preprocess_all_tracking verify_sn_tracking train_tracking inference_tracking clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -94,6 +94,24 @@ download_tracking_captions:
 	    --tracking_zip "$(TRACKING_ZIP)" \
 	    --local_dir SoccerNet \
 	    --split $(TRACKING_SPLIT)
+
+download_all_tracking:
+	python SoccerNet_script/download_all_tracking.py \
+	    --local_dir SoccerNet
+
+preprocess_all_tracking:
+	rm -f $(TRACKING_OUT)/soccernet_clips.json
+	for split in train valid test; do \
+	    if [ -f SoccerNet/tracking/$$split.zip ]; then \
+	        python tracking/preprocess/create_soccernet_clips.py \
+	            --tracking_zip SoccerNet/tracking/$$split.zip \
+	            --caption_dir SoccerNet/caption-2023/ \
+	            --out_dir $(TRACKING_OUT) \
+	            --split $$split; \
+	    else \
+	        echo "[skip] SoccerNet/tracking/$$split.zip not found"; \
+	    fi; \
+	done
 
 preprocess_sn_tracking:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/preprocess/create_soccernet_clips.py \

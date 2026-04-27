@@ -114,7 +114,7 @@ def load_caption_db(caption_dir):
     return caption_db
 
 
-def process_sequence(zf, gi_path, game_list, caption_db, out_dir):
+def process_sequence(zf, gi_path, game_list, caption_db, out_dir, split="train"):
     """
     Steps 4-9: Process a single SNMOT sequence.
     Returns JSON entry if successful, None otherwise.
@@ -185,7 +185,7 @@ def process_sequence(zf, gi_path, game_list, caption_db, out_dir):
             id_to_info[i] = {"class": cls, "jersey": jersey}
 
         # Read gt.txt
-        gt_path = f"train/{seq_name}/gt/gt.txt"
+        gt_path = f"{split}/{seq_name}/gt/gt.txt"
         try:
             with zf.open(gt_path) as f:
                 lines = f.read().decode("utf-8").splitlines()
@@ -329,7 +329,7 @@ def main():
             mp = game_list[gid] if 0 <= gid < len(game_list) else "OUT_OF_RANGE"
             print(f"    {gi}: gameID={gid} -> {mp}")
         for gi_path in tqdm(gameinfo_paths, desc="Sequences"):
-            result = process_sequence(zf, gi_path, game_list, caption_db, out_dir)
+            result = process_sequence(zf, gi_path, game_list, caption_db, out_dir, args.split)
             if result:
                 results.append(result)
 
