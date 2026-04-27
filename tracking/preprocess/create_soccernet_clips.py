@@ -308,11 +308,26 @@ def main():
     print(f"  Loaded {len(game_list)} games")
 
     print("Processing sequences...")
+    # Debug: Chelsea-Burnley が game_list の何番目か確認
+    target = "england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley"
+    if target in game_list:
+        print(f"  Target match index in game_list: {game_list.index(target)}")
+    else:
+        print(f"  WARNING: target match not found in game_list")
+        print(f"  First 5 games: {game_list[:5]}")
     results = []
     with zipfile.ZipFile(args.tracking_zip, "r") as zf:
         gameinfo_paths = [
             p for p in zf.namelist() if p.endswith("/gameinfo.ini") and "/SNMOT-" in p
         ]
+        print(f"  First 5 SNMOT gameIDs:")
+        for gi in gameinfo_paths[:5]:
+            with zf.open(gi) as f:
+                cfg = configparser.ConfigParser()
+                cfg.read_string(f.read().decode("utf-8"))
+            gid = int(cfg["Sequence"].get("gameID", -1))
+            mp = game_list[gid] if 0 <= gid < len(game_list) else "OUT_OF_RANGE"
+            print(f"    {gi}: gameID={gid} -> {mp}")
         for gi_path in tqdm(gameinfo_paths, desc="Sequences"):
             result = process_sequence(zf, gi_path, game_list, caption_db, out_dir)
             if result:
