@@ -41,6 +41,7 @@ def main():
         num_players=23,
         in_features=5,
         d_model=256,
+        max_frame_pos=200,
     )
     model.to(args.device)
     ckpt = torch.load(args.ckpt_path, map_location="cpu")
