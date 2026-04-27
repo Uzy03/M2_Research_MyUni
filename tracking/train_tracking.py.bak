@@ -182,9 +182,6 @@ def main():
     print("\n" + "=" * 60)
     print("Step 5: collate_fn 定義")
     print("=" * 60)
-    if model.tokenizer.pad_token is None:
-        model.tokenizer.pad_token = model.tokenizer.eos_token
-
     collate_fn = make_collate_fn(model.tokenizer, args.max_length)
     print("collate_fn created")
 
