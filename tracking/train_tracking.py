@@ -173,7 +173,14 @@ def main():
         ckpt = torch.load(args.ckpt_path, map_location="cpu")
         state_dict = ckpt.get("state_dict", ckpt)
         state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        model_state = model.state_dict()
+        filtered = {k: v for k, v in state_dict.items()
+                    if k not in model_state or model_state[k].shape == v.shape}
+        skipped = [k for k, v in state_dict.items()
+                   if k in model_state and model_state[k].shape != v.shape]
+        if skipped:
+            print(f"Skipping size-mismatched keys: {skipped}")
+        missing, unexpected = model.load_state_dict(filtered, strict=False)
         print(f"Missing keys (expected for TrackingEncoder): {len(missing)}")
         print(f"Unexpected keys: {len(unexpected)}")
     else:
