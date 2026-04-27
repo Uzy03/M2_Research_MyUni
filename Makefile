@@ -31,7 +31,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -v $(CURDIR):/workspace \
               -v $(CURDIR)/hf_cache:/root/.cache/huggingface
 
-.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips preprocess_sn_tracking verify_sn_tracking clean
+.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips download_tracking_captions preprocess_sn_tracking verify_sn_tracking clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -86,6 +86,12 @@ inference_instruction:
 	    --extra_game_times "$(EXTRA_GAME_TIMES)" \
 	    --game_times "$(GAME_TIMES)" \
 	    --device $(DEVICE)
+
+download_tracking_captions:
+	python SoccerNet_script/download_tracking_captions.py \
+	    --tracking_zip "$(TRACKING_ZIP)" \
+	    --local_dir SoccerNet \
+	    --split $(TRACKING_SPLIT)
 
 preprocess_sn_tracking:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/preprocess/create_soccernet_clips.py \
