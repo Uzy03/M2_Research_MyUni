@@ -1,7 +1,7 @@
 IMAGE      := unisoccer
 REMOTE     := ujihara@solar.arch.cs.kumamoto-u.ac.jp
 REMOTE_PORT := 2222
-REMOTE_DIR := /user/arch/ujihara/UniSoccer
+REMOTE_DIR := /user/arch/ujihara/M2_Research_MyUni
 SRC        := SoccerNet/
 MATCH_DIR  := SoccerNet/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley
 JSON_PATH  := $(MATCH_DIR)/clip_dataset.json
