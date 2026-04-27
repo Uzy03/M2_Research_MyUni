@@ -74,6 +74,9 @@ def load_caption_db(caption_dir):
             # Compute match_path (relative path without filename)
             rel_path = Path(json_file).relative_to(caption_dir_path)
             match_path = str(rel_path.parent)
+            if match_path == ".":
+                parts = caption_dir_path.resolve().parts
+                match_path = str(Path(parts[-3]) / parts[-2] / parts[-1])
 
             with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
@@ -107,6 +110,7 @@ def load_caption_db(caption_dir):
         except Exception as e:
             print(f"Warning: Failed to load {json_file}: {e}")
 
+    print(f"  caption_db keys: {list(caption_db.keys())}")
     return caption_db
 
 
