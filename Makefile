@@ -21,6 +21,8 @@ EXTRA_GAME_TIMES ?=
 GAME_TIMES       ?=
 
 TRACKING_ZIP     := SoccerNet/tracking/train.zip
+TRACKING_CKPT    := checkpoints/tracking_finetuned.pth
+TRACKING_INF_CSV := results/tracking_inference.csv
 CAPTION_DIR      ?= SoccerNet/caption-2023/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley
 TRACKING_OUT     := tracking_clips_sn
 TRACKING_SPLIT   := train
@@ -31,7 +33,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -v $(CURDIR):/workspace \
               -v $(CURDIR)/hf_cache:/root/.cache/huggingface
 
-.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips download_tracking_captions preprocess_sn_tracking verify_sn_tracking clean
+.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips download_tracking_captions preprocess_sn_tracking verify_sn_tracking train_tracking inference_tracking clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -110,6 +112,22 @@ print(f'  seq_id:  {e[\"seq_id\"]}') if e else print('  (no data)'); \
 print(f'  caption: {e[\"caption\"][:80]}') if e else None; \
 print(f'  shape:   {np.load(e[\"npy_path\"]).shape}') if e else None; \
 "
+
+train_tracking:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_tracking.py \
+	    --json_path $(TRACKING_OUT)/soccernet_clips.json \
+	    --ckpt_path $(COMMENTARY_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(TRACKING_CKPT) \
+	    --device $(DEVICE)
+
+inference_tracking:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_tracking.py \
+	    --json_path checkpoints/tracking_test_split.json \
+	    --ckpt_path $(TRACKING_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_csv $(TRACKING_INF_CSV) \
+	    --device $(DEVICE)
 
 extract_clips:
 	python SoccerNet_script/extract_clips.py \
