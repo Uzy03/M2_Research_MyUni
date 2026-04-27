@@ -168,12 +168,15 @@ def main():
     print("\n" + "=" * 60)
     print("Step 4: 既存チェックポイントからロード")
     print("=" * 60)
-    ckpt = torch.load(args.ckpt_path, map_location="cpu")
-    state_dict = ckpt.get("state_dict", ckpt)
-    state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    print(f"Missing keys (expected for TrackingEncoder): {len(missing)}")
-    print(f"Unexpected keys: {len(unexpected)}")
+    if args.ckpt_path and os.path.exists(args.ckpt_path):
+        ckpt = torch.load(args.ckpt_path, map_location="cpu")
+        state_dict = ckpt.get("state_dict", ckpt)
+        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        print(f"Missing keys (expected for TrackingEncoder): {len(missing)}")
+        print(f"Unexpected keys: {len(unexpected)}")
+    else:
+        print(f"WARNING: ckpt_path not found ({args.ckpt_path}), training from scratch")
 
     # Step 5: collate_fn の定義 (already defined above)
     print("\n" + "=" * 60)
