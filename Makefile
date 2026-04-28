@@ -24,6 +24,9 @@ TRACKING_ZIP     := SoccerNet/tracking/train.zip
 TRACKING_CKPT    := checkpoints/tracking_finetuned.pth
 TRACKING_INF_CSV := results/tracking_inference.csv
 
+TRAJECTORY_CKPT    := checkpoints/trajectory.pth
+TRAJECTORY_CSV     := results/trajectory_inference.csv
+
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
 SOCCERREPLAY_JSON       := train_data/json/SoccerReplay-1988/classification_train.json
@@ -44,7 +47,8 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         preprocess_sn_tracking preprocess_all_tracking _preprocess_all_tracking \
         verify_sn_tracking train_tracking inference_tracking \
         train_instruction inference_instruction_action \
-        download_soccerreplay clean
+        download_soccerreplay \
+        train_trajectory inference_trajectory clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -174,6 +178,24 @@ upload:
 	COPYFILE_DISABLE=1 tar --exclude='._*' --exclude='.DS_Store' -cf - "$(SRC)" | \
 	    ssh -p $(REMOTE_PORT) $(REMOTE) \
 	        "mkdir -p '$(REMOTE_DIR)' && cd '$(REMOTE_DIR)' && tar -xf -"
+
+train_trajectory:
+	bash tmux_run.sh train_trajectory \
+	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory.py \
+	        --json_path $(TRACKING_OUT)/soccernet_clips.json \
+	        --ckpt_path $(COMMENTARY_CKPT) \
+	        --llm_ckpt $(LLM_CKPT) \
+	        --out_ckpt $(TRAJECTORY_CKPT) \
+	        --device $(DEVICE)"
+
+inference_trajectory:
+	bash tmux_run.sh inference_trajectory \
+	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_trajectory.py \
+	        --json_path checkpoints/trajectory_test_split.json \
+	        --ckpt_path $(TRAJECTORY_CKPT) \
+	        --llm_ckpt $(LLM_CKPT) \
+	        --out_csv $(TRAJECTORY_CSV) \
+	        --device $(DEVICE)"
 
 download_soccerreplay:
 	python SoccerNet_script/download_soccerreplay.py \

@@ -1,0 +1,5 @@
+{
+  "instruction": "Predict the (x,y) positions of all 23 players for the next 10 frames (5 FPS). Format: p0:[(x,y),...], p1:[(x,y),...], ..., p22:[(x,y),...]",
+  "use_logits_filter": false,
+  "max_new_tokens": 1024
+}
