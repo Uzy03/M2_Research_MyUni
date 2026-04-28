@@ -33,7 +33,10 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -v $(CURDIR):/workspace \
               -v $(CURDIR)/hf_cache:/root/.cache/huggingface
 
-.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips download_tracking_captions download_all_tracking preprocess_sn_tracking preprocess_all_tracking verify_sn_tracking train_tracking inference_tracking clean
+.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips \
+        download_tracking_captions download_all_tracking \
+        preprocess_sn_tracking preprocess_all_tracking _preprocess_all_tracking \
+        verify_sn_tracking train_tracking inference_tracking clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -96,10 +99,21 @@ download_tracking_captions:
 	    --split $(TRACKING_SPLIT)
 
 download_all_tracking:
-	python SoccerNet_script/download_all_tracking.py \
-	    --local_dir SoccerNet
+	bash team/tmux_run.sh download_all_tracking \
+	    "python SoccerNet_script/download_all_tracking.py --local_dir SoccerNet"
+
+preprocess_sn_tracking:
+	bash team/tmux_run.sh preprocess_sn_tracking \
+	    "python tracking/preprocess/create_soccernet_clips.py \
+	        --tracking_zip '$(TRACKING_ZIP)' \
+	        --caption_dir '$(CAPTION_DIR)' \
+	        --out_dir $(TRACKING_OUT) \
+	        --split $(TRACKING_SPLIT)"
 
 preprocess_all_tracking:
+	bash team/tmux_run.sh preprocess_all_tracking "$(MAKE) _preprocess_all_tracking"
+
+_preprocess_all_tracking:
 	rm -f $(TRACKING_OUT)/soccernet_clips.json
 	for split in train valid test; do \
 	    if [ -f SoccerNet/tracking/$$split.zip ]; then \
@@ -113,13 +127,6 @@ preprocess_all_tracking:
 	    fi; \
 	done
 
-preprocess_sn_tracking:
-	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/preprocess/create_soccernet_clips.py \
-	    --tracking_zip "$(TRACKING_ZIP)" \
-	    --caption_dir "$(CAPTION_DIR)" \
-	    --out_dir $(TRACKING_OUT) \
-	    --split $(TRACKING_SPLIT)
-
 verify_sn_tracking:
 	python -c "\
 import json, numpy as np; \
@@ -132,20 +139,22 @@ print(f'  shape:   {np.load(e[\"npy_path\"]).shape}') if e else None; \
 "
 
 train_tracking:
-	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_tracking.py \
-	    --json_path $(TRACKING_OUT)/soccernet_clips.json \
-	    --ckpt_path $(COMMENTARY_CKPT) \
-	    --llm_ckpt $(LLM_CKPT) \
-	    --out_ckpt $(TRACKING_CKPT) \
-	    --device $(DEVICE)
+	bash team/tmux_run.sh train_tracking \
+	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_tracking.py \
+	        --json_path $(TRACKING_OUT)/soccernet_clips.json \
+	        --ckpt_path $(COMMENTARY_CKPT) \
+	        --llm_ckpt $(LLM_CKPT) \
+	        --out_ckpt $(TRACKING_CKPT) \
+	        --device $(DEVICE)"
 
 inference_tracking:
-	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_tracking.py \
-	    --json_path checkpoints/tracking_test_split.json \
-	    --ckpt_path $(TRACKING_CKPT) \
-	    --llm_ckpt $(LLM_CKPT) \
-	    --out_csv $(TRACKING_INF_CSV) \
-	    --device $(DEVICE)
+	bash team/tmux_run.sh inference_tracking \
+	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_tracking.py \
+	        --json_path checkpoints/tracking_test_split.json \
+	        --ckpt_path $(TRACKING_CKPT) \
+	        --llm_ckpt $(LLM_CKPT) \
+	        --out_csv $(TRACKING_INF_CSV) \
+	        --device $(DEVICE)"
 
 extract_clips:
 	python SoccerNet_script/extract_clips.py \
