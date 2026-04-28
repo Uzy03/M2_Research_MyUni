@@ -48,7 +48,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         verify_sn_tracking train_tracking inference_tracking \
         train_instruction inference_instruction_action \
         download_soccerreplay \
-        train_trajectory inference_trajectory clean
+        train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -180,6 +180,14 @@ upload:
 	        "mkdir -p '$(REMOTE_DIR)' && cd '$(REMOTE_DIR)' && tar -xf -"
 
 train_trajectory:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory.py \
+	    --json_path $(TRACKING_OUT)/soccernet_clips.json \
+	    --ckpt_path $(COMMENTARY_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(TRAJECTORY_CKPT) \
+	    --device $(DEVICE)
+
+train_trajectory_tmux:
 	bash tmux_run.sh train_trajectory \
 	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory.py \
 	        --json_path $(TRACKING_OUT)/soccernet_clips.json \
@@ -187,6 +195,14 @@ train_trajectory:
 	        --llm_ckpt $(LLM_CKPT) \
 	        --out_ckpt $(TRAJECTORY_CKPT) \
 	        --device $(DEVICE)"
+
+train_trajectory_local:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory.py \
+	    --json_path $(TRACKING_OUT)/soccernet_clips.json \
+	    --ckpt_path $(COMMENTARY_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(TRAJECTORY_CKPT) \
+	    --device $(DEVICE)
 
 inference_trajectory:
 	bash tmux_run.sh inference_trajectory \
@@ -196,6 +212,14 @@ inference_trajectory:
 	        --llm_ckpt $(LLM_CKPT) \
 	        --out_csv $(TRAJECTORY_CSV) \
 	        --device $(DEVICE)"
+
+inference_trajectory_local:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_trajectory.py \
+	    --json_path checkpoints/trajectory_test_split.json \
+	    --ckpt_path $(TRAJECTORY_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_csv $(TRAJECTORY_CSV) \
+	    --device $(DEVICE)
 
 download_soccerreplay:
 	python SoccerNet_script/download_soccerreplay.py \
