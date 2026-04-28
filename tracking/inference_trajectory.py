@@ -106,10 +106,14 @@ def main():
             }
 
             with torch.no_grad():
-                generated, _, _ = model(samples, validating=True)
+                generated_list, _, _ = model(samples, validating=True)
+            generated = generated_list[0] if generated_list else ''
 
             # Ground truth trajectory
             target_npy = npy[start+args.context_len : start+args.context_len+args.K]
+            if target_npy.shape[0] < args.K:
+                print(f'Skip {entry.get("seq_id", "")}: only {target_npy.shape[0]} target frames')
+                continue
             gt_xy = target_npy[:, :, :2]   # (K, N, 2)
             gt_text = format_trajectory(gt_xy, args.K)
 
@@ -138,11 +142,24 @@ def main():
             writer.writerows(results)
     
     print(f'Saved: {args.out_csv}')
-    ade_values = [r['ade'] for r in results]
-    fde_values = [r['fde'] for r in results]
-    if ade_values:
-        print(f'ADE mean: {sum(ade_values) / len(ade_values):.4f}')
-        print(f'FDE mean: {sum(fde_values) / len(fde_values):.4f}')
+    ade_values = [r['ade'] for r in results if r['ade'] == r['ade']]  # NaN を除外
+    fde_values = [r['fde'] for r in results if r['fde'] == r['fde']]
+    ade_mean = sum(ade_values) / len(ade_values) if ade_values else float('nan')
+    fde_mean = sum(fde_values) / len(fde_values) if fde_values else float('nan')
+    print(f'ADE mean: {ade_mean:.4f}')
+    print(f'FDE mean: {fde_mean:.4f}')
+
+    # サマリーをファイルに保存（tmux で回した時に結果を確認できるように）
+    import json as _json
+    summary_path = args.out_csv.replace('.csv', '_summary.json')
+    summary = {
+        'ade_mean': ade_mean,
+        'fde_mean': fde_mean,
+        'n_results': len(results),
+    }
+    with open(summary_path, 'w') as f:
+        _json.dump(summary, f, indent=2)
+    print(f'Summary saved: {summary_path}')
 
 
 if __name__ == "__main__":
