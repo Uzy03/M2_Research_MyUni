@@ -23,6 +23,12 @@ GAME_TIMES       ?=
 TRACKING_ZIP     := SoccerNet/tracking/train.zip
 TRACKING_CKPT    := checkpoints/tracking_finetuned.pth
 TRACKING_INF_CSV := results/tracking_inference.csv
+
+INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
+INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
+SOCCERREPLAY_JSON       := train_data/json/SoccerReplay-1988/classification_train.json
+SOCCERREPLAY_VIDEO_BASE ?= /path/to/soccerreplay/videos
+HF_TOKEN                ?= $(shell echo $$HF_TOKEN)
 CAPTION_DIR      ?= SoccerNet/caption-2023/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley
 TRACKING_OUT     := tracking_clips_sn
 TRACKING_SPLIT   := train
@@ -36,7 +42,9 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
 .PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips \
         download_tracking_captions download_all_tracking \
         preprocess_sn_tracking preprocess_all_tracking _preprocess_all_tracking \
-        verify_sn_tracking train_tracking inference_tracking clean
+        verify_sn_tracking train_tracking inference_tracking \
+        train_instruction inference_instruction_action \
+        download_soccerreplay clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -166,6 +174,31 @@ upload:
 	COPYFILE_DISABLE=1 tar --exclude='._*' --exclude='.DS_Store' -cf - "$(SRC)" | \
 	    ssh -p $(REMOTE_PORT) $(REMOTE) \
 	        "mkdir -p '$(REMOTE_DIR)' && cd '$(REMOTE_DIR)' && tar -xf -"
+
+download_soccerreplay:
+	python SoccerNet_script/download_soccerreplay.py \
+	    --token "$(HF_TOKEN)" \
+	    --out_dir train_data/json/SoccerReplay-1988
+
+train_instruction:
+	bash tmux_run.sh train_instruction \
+	    "CUDA_VISIBLE_DEVICES=$(GPU) python inference/train_instruction.py \
+	        --json_path $(SOCCERREPLAY_JSON) \
+	        --video_base '$(SOCCERREPLAY_VIDEO_BASE)' \
+	        --ckpt_path $(COMMENTARY_CKPT) \
+	        --llm_ckpt $(LLM_CKPT) \
+	        --out_ckpt $(INSTRUCTION_ACTION_CKPT) \
+	        --device $(DEVICE)"
+
+inference_instruction_action:
+	CUDA_VISIBLE_DEVICES=$(GPU) python inference/inference_instruction_soccernet.py \
+	    --config configs/instruction_action.json \
+	    --results_csv $(OUT_CSV) \
+	    --json_path "$(JSON_PATH)" \
+	    --ckpt_path $(INSTRUCTION_ACTION_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_csv $(INSTRUCTION_ACTION_CSV) \
+	    --device $(DEVICE)
 
 clean:
 	docker image prune -f
