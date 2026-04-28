@@ -4,6 +4,7 @@ TrajectoryDataset を使い、TrackingEncoder + Q-Former → LLM(凍結) で
 InstructBLIP 方式: 指示文を -100 マスクして答えトークンのみで loss 計算。
 """
 import argparse
+import csv
 import json
 import os
 import random
@@ -266,6 +267,11 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     model.train()
 
+    log_csv = str(Path(args.out_ckpt).parent / Path(args.out_ckpt).stem + ".train_log.csv")
+    with open(log_csv, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["epoch", "loss"])
+
     for epoch in range(1, args.epochs + 1):
         total_loss = 0.0
         for batch in train_loader:
@@ -280,6 +286,9 @@ def main():
             total_loss += loss.item()
         avg_loss = total_loss / len(train_loader)
         print(f"Epoch {epoch}/{args.epochs}  loss={avg_loss:.4f}")
+        with open(log_csv, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([epoch, f"{avg_loss:.6f}"])
 
     # Step 7: チェックポイント保存
     print("\n" + "=" * 60)
