@@ -267,7 +267,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     model.train()
 
-    log_csv = str(Path(args.out_ckpt).parent / Path(args.out_ckpt).stem + ".train_log.csv")
+    log_csv = Path(args.out_ckpt).with_suffix('.train_log.csv')
     with open(log_csv, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "loss"])
