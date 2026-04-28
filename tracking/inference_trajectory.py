@@ -1,15 +1,14 @@
 import argparse
+import csv
 import json
 import numpy as np
 import os
 import sys
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 from tqdm import tqdm
-import pandas as pd
 
 from tracking.dataset.trajectory_dataset import (
     format_trajectory, parse_trajectory, compute_ade_fde
@@ -132,12 +131,18 @@ def main():
 
     # Step 4: Save results to CSV
     os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
-    df = pd.DataFrame(results)
-    df.to_csv(args.out_csv, index=False)
+    if results:
+        with open(args.out_csv, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=results[0].keys())
+            writer.writeheader()
+            writer.writerows(results)
     
     print(f'Saved: {args.out_csv}')
-    print(f'ADE mean: {df.ade.mean():.4f}')
-    print(f'FDE mean: {df.fde.mean():.4f}')
+    ade_values = [r['ade'] for r in results]
+    fde_values = [r['fde'] for r in results]
+    if ade_values:
+        print(f'ADE mean: {sum(ade_values) / len(ade_values):.4f}')
+        print(f'FDE mean: {sum(fde_values) / len(fde_values):.4f}')
 
 
 if __name__ == "__main__":
