@@ -99,11 +99,11 @@ download_tracking_captions:
 	    --split $(TRACKING_SPLIT)
 
 download_all_tracking:
-	bash team/tmux_run.sh download_all_tracking \
+	bash tmux_run.sh download_all_tracking \
 	    "python SoccerNet_script/download_all_tracking.py --local_dir SoccerNet"
 
 preprocess_sn_tracking:
-	bash team/tmux_run.sh preprocess_sn_tracking \
+	bash tmux_run.sh preprocess_sn_tracking \
 	    "python tracking/preprocess/create_soccernet_clips.py \
 	        --tracking_zip '$(TRACKING_ZIP)' \
 	        --caption_dir '$(CAPTION_DIR)' \
@@ -111,7 +111,7 @@ preprocess_sn_tracking:
 	        --split $(TRACKING_SPLIT)"
 
 preprocess_all_tracking:
-	bash team/tmux_run.sh preprocess_all_tracking "$(MAKE) _preprocess_all_tracking"
+	bash tmux_run.sh preprocess_all_tracking "$(MAKE) _preprocess_all_tracking"
 
 _preprocess_all_tracking:
 	rm -f $(TRACKING_OUT)/soccernet_clips.json
@@ -139,7 +139,7 @@ print(f'  shape:   {np.load(e[\"npy_path\"]).shape}') if e else None; \
 "
 
 train_tracking:
-	bash team/tmux_run.sh train_tracking \
+	bash tmux_run.sh train_tracking \
 	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_tracking.py \
 	        --json_path $(TRACKING_OUT)/soccernet_clips.json \
 	        --ckpt_path $(COMMENTARY_CKPT) \
@@ -148,7 +148,7 @@ train_tracking:
 	        --device $(DEVICE)"
 
 inference_tracking:
-	bash team/tmux_run.sh inference_tracking \
+	bash tmux_run.sh inference_tracking \
 	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_tracking.py \
 	        --json_path checkpoints/tracking_test_split.json \
 	        --ckpt_path $(TRACKING_CKPT) \
