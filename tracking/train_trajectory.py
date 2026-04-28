@@ -126,13 +126,13 @@ def main():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=4,
+        default=2,
         help="バッチサイズ",
     )
     parser.add_argument(
         "--max_length",
         type=int,
-        default=768,
+        default=384,
         help="トークナイザーの最大長",
     )
     parser.add_argument(
