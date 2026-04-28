@@ -132,7 +132,7 @@ def main():
     parser.add_argument(
         "--max_length",
         type=int,
-        default=384,
+        default=576,
         help="トークナイザーの最大長",
     )
     parser.add_argument(
