@@ -102,7 +102,7 @@ def main():
     parser.add_argument(
         "--K",
         type=int,
-        default=10,
+        default=5,
         help="ターゲット軌跡のフレーム数",
     )
     parser.add_argument(
