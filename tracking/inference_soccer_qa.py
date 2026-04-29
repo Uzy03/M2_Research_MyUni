@@ -147,16 +147,15 @@ def initialize_model(ckpt_path, llm_ckpt, device, instruction, max_new_tokens):
         max_frame_pos=200,
     )
     
-    # Load checkpoint with shape filtering
+    # Load checkpoint - exclude LLM keys (already loaded from llm_ckpt, ~16GB)
     ckpt = torch.load(ckpt_path, map_location="cpu")
     state_dict = ckpt.get("state_dict", ckpt)
     
-    # Remove 'module.' prefix if present (from DataParallel)
-    state_dict = {
-        k.replace("module.", "", 1): v for k, v in state_dict.items()
-    }
+    state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
     
-    # Filter by shape to avoid mismatches
+    # Exclude frozen LLM weights (llama_model.*) to avoid CPU OOM
+    state_dict = {k: v for k, v in state_dict.items() if not k.startswith("llama_model.")}
+    
     model_state = model.state_dict()
     filtered = {
         k: v
