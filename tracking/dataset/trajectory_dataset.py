@@ -2,6 +2,7 @@ import json
 import re
 import numpy as np
 import torch
+from pathlib import Path
 from torch.utils.data import Dataset
 
 
@@ -108,14 +109,15 @@ class TrajectoryDataset(Dataset):
         self.context_len = context_len
         self.K = K
         self.step = step
-        
+        self.base_dir = Path(json_path).parent
+
         with open(json_path) as f:
             self.data = json.load(f)
         
         # Create sliding windows: (clip_idx, start_frame)
         self.windows = []
         for clip_idx, entry in enumerate(self.data):
-            npy = np.load(entry['npy_path'])
+            npy = np.load(self.base_dir / entry['npy_path'])
             total_frames = npy.shape[0]
             
             # Ensure we have enough frames for context + target
@@ -150,8 +152,8 @@ class TrajectoryDataset(Dataset):
         entry = self.data[clip_idx]
         
         # Load features and masks
-        npy = np.load(entry['npy_path'])     # (T, N, F)
-        mask = np.load(entry['mask_path'])   # (T, N)
+        npy = np.load(self.base_dir / entry['npy_path'])     # (T, N, F)
+        mask = np.load(self.base_dir / entry['mask_path'])   # (T, N)
         
         # Extract context window
         context_feat = torch.FloatTensor(
