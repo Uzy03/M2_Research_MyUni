@@ -26,6 +26,9 @@ TRACKING_INF_CSV := results/tracking_inference.csv
 
 TRAJECTORY_CKPT    := checkpoints/trajectory.pth
 TRAJECTORY_CSV     := results/trajectory_inference.csv
+TRAJECTORY_K       := 5
+TRAJECTORY_CONTEXT := 100
+TRAJECTORY_MAXLEN  := 576
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -185,6 +188,9 @@ train_trajectory:
 	    --ckpt_path $(COMMENTARY_CKPT) \
 	    --llm_ckpt $(LLM_CKPT) \
 	    --out_ckpt $(TRAJECTORY_CKPT) \
+	    --K $(TRAJECTORY_K) \
+	    --context_len $(TRAJECTORY_CONTEXT) \
+	    --max_length $(TRAJECTORY_MAXLEN) \
 	    --device $(DEVICE)
 
 train_trajectory_tmux:
@@ -194,6 +200,9 @@ train_trajectory_tmux:
 	        --ckpt_path $(COMMENTARY_CKPT) \
 	        --llm_ckpt $(LLM_CKPT) \
 	        --out_ckpt $(TRAJECTORY_CKPT) \
+	        --K $(TRAJECTORY_K) \
+	        --context_len $(TRAJECTORY_CONTEXT) \
+	        --max_length $(TRAJECTORY_MAXLEN) \
 	        --device $(DEVICE)"
 
 train_trajectory_local:
@@ -202,6 +211,9 @@ train_trajectory_local:
 	    --ckpt_path $(COMMENTARY_CKPT) \
 	    --llm_ckpt $(LLM_CKPT) \
 	    --out_ckpt $(TRAJECTORY_CKPT) \
+	    --K $(TRAJECTORY_K) \
+	    --context_len $(TRAJECTORY_CONTEXT) \
+	    --max_length $(TRAJECTORY_MAXLEN) \
 	    --device $(DEVICE)
 
 inference_trajectory:
@@ -211,6 +223,8 @@ inference_trajectory:
 	        --ckpt_path $(TRAJECTORY_CKPT) \
 	        --llm_ckpt $(LLM_CKPT) \
 	        --out_csv $(TRAJECTORY_CSV) \
+	        --K $(TRAJECTORY_K) \
+	        --context_len $(TRAJECTORY_CONTEXT) \
 	        --device $(DEVICE)"
 
 inference_trajectory_local:
@@ -219,6 +233,8 @@ inference_trajectory_local:
 	    --ckpt_path $(TRAJECTORY_CKPT) \
 	    --llm_ckpt $(LLM_CKPT) \
 	    --out_csv $(TRAJECTORY_CSV) \
+	    --K $(TRAJECTORY_K) \
+	    --context_len $(TRAJECTORY_CONTEXT) \
 	    --device $(DEVICE)
 
 download_soccerreplay:
