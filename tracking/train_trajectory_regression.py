@@ -198,12 +198,16 @@ def main():
         batch_size=args.batch_size,
         shuffle=True,
         collate_fn=collate_fn,
+        num_workers=4,
+        pin_memory=True,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=args.batch_size,
         shuffle=False,
         collate_fn=collate_fn,
+        num_workers=4,
+        pin_memory=True,
     )
     print(f"Train DataLoader: {len(train_loader)} batches")
     print(f"Val DataLoader: {len(val_loader)} batches")
@@ -231,6 +235,8 @@ def main():
             optimizer.zero_grad()
             pred = model(batch['tracking'], batch['mask'])
             loss = model.compute_loss(pred, batch['target_xy'].to(args.device), batch['target_mask'].to(args.device))
+            if torch.isnan(loss):
+                continue
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()

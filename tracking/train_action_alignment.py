@@ -197,6 +197,8 @@ def main():
         batch_size=args.batch_size,
         shuffle=True,
         collate_fn=collate_fn,
+        num_workers=4,
+        pin_memory=True,
     )
     print(f"DataLoader created: {len(train_loader)} batches")
 
@@ -220,6 +222,8 @@ def main():
             }
             optimizer.zero_grad()
             loss = model(batch, validating=False)
+            if torch.isnan(loss):
+                continue
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
