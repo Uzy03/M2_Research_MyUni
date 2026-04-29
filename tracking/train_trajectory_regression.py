@@ -184,10 +184,7 @@ def main():
     print("Step 3: Loading pre-trained weights")
     print("=" * 60)
     if args.ckpt_path and os.path.exists(args.ckpt_path):
-        ckpt = torch.load(args.ckpt_path, map_location="cpu")
-        state_dict = ckpt.get("state_dict", ckpt)
-        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-        model.load_pretrained(state_dict)
+        model.load_pretrained(args.ckpt_path)
         print(f"Pre-trained weights loaded from {args.ckpt_path}")
     else:
         print(f"WARNING: ckpt_path not found ({args.ckpt_path}), training from scratch")
