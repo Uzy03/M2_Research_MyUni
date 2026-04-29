@@ -155,8 +155,8 @@ def main():
         {
             "clip_idx": full_dataset.windows[i][0],
             "start_frame": full_dataset.windows[i][1],
-            "npy_path": full_dataset.data[full_dataset.windows[i][0]]["npy_path"],
-            "mask_path": full_dataset.data[full_dataset.windows[i][0]]["mask_path"],
+            "npy_path": str(full_dataset.base_dir / full_dataset.data[full_dataset.windows[i][0]]["npy_path"]),
+            "mask_path": str(full_dataset.base_dir / full_dataset.data[full_dataset.windows[i][0]]["mask_path"]),
             "seq_id": full_dataset.data[full_dataset.windows[i][0]].get("seq_id", ""),
         }
         for i in test_indices

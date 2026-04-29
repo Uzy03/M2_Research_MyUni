@@ -1,0 +1,4 @@
+{
+  "instruction": "What action is occurring in this soccer tracking data?",
+  "max_new_tokens": 16
+}

@@ -1,0 +1,4 @@
+{
+  "instruction": "What formation is team 1 (players in slots 1-11) using? Answer with numbers like 4-3-3.",
+  "max_new_tokens": 16
+}

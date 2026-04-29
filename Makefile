@@ -33,6 +33,10 @@ TRAJECTORY_MAXLEN  := 576
 REGRESSION_CKPT := checkpoints/trajectory_regression.pth
 REGRESSION_CSV  := results/trajectory_regression_inference.csv
 
+ACTION_CKPT     := checkpoints/action_alignment.pth
+QA_CONFIG       ?= configs/qa_action.json
+QA_CSV          := results/soccer_qa_results.csv
+
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
 SOCCERREPLAY_JSON       := train_data/json/SoccerReplay-1988/classification_train.json
@@ -70,7 +74,8 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         download_soccerreplay preprocess_soccerdata upload_soccerdata \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
-        train_trajectory_regression inference_trajectory_regression clean
+        train_trajectory_regression inference_trajectory_regression \
+        train_action_alignment inference_soccer_qa clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -357,6 +362,25 @@ inference_trajectory_regression:
 	    --ckpt_path $(REGRESSION_CKPT) \
 	    --out_csv $(REGRESSION_CSV) \
 	    --K $(SD_K) \
+	    --context_len $(SD_CONTEXT) \
+	    --device $(DEVICE)
+
+train_action_alignment:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(REGRESSION_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(ACTION_CKPT) \
+	    --context_len $(SD_CONTEXT) \
+	    --device $(DEVICE)
+
+inference_soccer_qa:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(ACTION_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --config $(QA_CONFIG) \
+	    --out_csv $(QA_CSV) \
 	    --context_len $(SD_CONTEXT) \
 	    --device $(DEVICE)
 
