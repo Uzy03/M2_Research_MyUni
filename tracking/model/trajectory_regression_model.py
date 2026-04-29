@@ -106,7 +106,7 @@ class TrajectoryRegressionModel(nn.Module):
         
         # Return zero loss if no valid samples to avoid NaN
         if valid_flat.sum() == 0:
-            return pred.sum() * 0
+            return torch.zeros(1, device=pred.device, requires_grad=True).squeeze()
         
         return F.mse_loss(pred[valid_flat], target_xy[valid_flat])
     

@@ -232,6 +232,7 @@ def main():
             pred = model(batch['tracking'], batch['mask'])
             loss = model.compute_loss(pred, batch['target_xy'].to(args.device), batch['target_mask'].to(args.device))
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             total_loss += loss.item()
         avg_train_loss = total_loss / len(train_loader)
