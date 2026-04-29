@@ -3,6 +3,7 @@ SoccerNet/
 results/
 hf_cache/
 tracking_clips/
+soccerdata_clips/
 
 # Claude
 .claude/

@@ -39,6 +39,20 @@ CAPTION_DIR      ?= SoccerNet/caption-2023/england_epl/2014-2015/2015-02-21 - 18
 TRACKING_OUT     := tracking_clips_sn
 TRACKING_SPLIT   := train
 
+SOCCERDATA_DIR    := /Users/ujihara/m2_研究/SoccerData
+SOCCERDATA_CONFIG := fps1_sec30_onball_step5s
+SOCCERDATA_OUT    := soccerdata_clips
+SOCCERDATA_MAX_GAMES ?= 0
+
+# SoccerData trajectory training parameters (FPS=1, 30sec clips)
+SD_JSON           := $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/clips.json
+SD_CKPT           := checkpoints/trajectory_soccerdata.pth
+SD_CSV            := results/trajectory_soccerdata_inference.csv
+SD_CONTEXT        := 20
+SD_K              := 5
+SD_STEP           := 1
+SD_MAXLEN         := 576
+
 DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -e CUDA_VISIBLE_DEVICES=$(GPU) \
               --shm-size=8g \
@@ -50,7 +64,8 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         preprocess_sn_tracking preprocess_all_tracking _preprocess_all_tracking \
         verify_sn_tracking train_tracking inference_tracking \
         train_instruction inference_instruction_action \
-        download_soccerreplay \
+        download_soccerreplay preprocess_soccerdata upload_soccerdata \
+        train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory clean
 
 build:
@@ -261,6 +276,66 @@ inference_instruction_action:
 	    --llm_ckpt $(LLM_CKPT) \
 	    --out_csv $(INSTRUCTION_ACTION_CSV) \
 	    --device $(DEVICE)
+
+train_trajectory_sd:
+	bash tmux_run.sh train_trajectory_sd \
+	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory.py \
+	        --json_path $(SD_JSON) \
+	        --ckpt_path $(COMMENTARY_CKPT) \
+	        --llm_ckpt $(LLM_CKPT) \
+	        --out_ckpt $(SD_CKPT) \
+	        --context_len $(SD_CONTEXT) \
+	        --K $(SD_K) \
+	        --step $(SD_STEP) \
+	        --max_length $(SD_MAXLEN) \
+	        --device $(DEVICE)"
+
+train_trajectory_sd_local:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(COMMENTARY_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(SD_CKPT) \
+	    --context_len $(SD_CONTEXT) \
+	    --K $(SD_K) \
+	    --step $(SD_STEP) \
+	    --max_length $(SD_MAXLEN) \
+	    --device $(DEVICE)
+
+inference_trajectory_sd:
+	bash tmux_run.sh inference_trajectory_sd \
+	    "CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_trajectory.py \
+	        --json_path checkpoints/trajectory_soccerdata_test_split.json \
+	        --ckpt_path $(SD_CKPT) \
+	        --llm_ckpt $(LLM_CKPT) \
+	        --out_csv $(SD_CSV) \
+	        --K $(SD_K) \
+	        --context_len $(SD_CONTEXT) \
+	        --device $(DEVICE)"
+
+inference_trajectory_sd_local:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_trajectory.py \
+	    --json_path checkpoints/trajectory_soccerdata_test_split.json \
+	    --ckpt_path $(SD_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_csv $(SD_CSV) \
+	    --K $(SD_K) \
+	    --context_len $(SD_CONTEXT) \
+	    --device $(DEVICE)
+
+preprocess_soccerdata:
+	python SoccerNet_script/preprocess_soccerdata.py \
+	    --data_dir $(SOCCERDATA_DIR) \
+	    --out_dir $(SOCCERDATA_OUT) \
+	    --config $(SOCCERDATA_CONFIG) \
+	    --max_games $(SOCCERDATA_MAX_GAMES)
+
+upload_soccerdata:
+	COPYFILE_DISABLE=1 tar --exclude='._*' --exclude='.DS_Store' -cf - \
+	    "$(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)" | \
+	    ssh -p $(REMOTE_PORT) $(REMOTE) \
+	        "mkdir -p '$(REMOTE_DIR)/soccerdata_clips' && \
+	         cd '$(REMOTE_DIR)' && tar -xf -"
 
 clean:
 	docker image prune -f
