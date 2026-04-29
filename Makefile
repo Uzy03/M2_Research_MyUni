@@ -30,6 +30,9 @@ TRAJECTORY_K       := 5
 TRAJECTORY_CONTEXT := 100
 TRAJECTORY_MAXLEN  := 576
 
+REGRESSION_CKPT := checkpoints/trajectory_regression.pth
+REGRESSION_CSV  := results/trajectory_regression_inference.csv
+
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
 SOCCERREPLAY_JSON       := train_data/json/SoccerReplay-1988/classification_train.json
@@ -66,7 +69,8 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_instruction inference_instruction_action \
         download_soccerreplay preprocess_soccerdata upload_soccerdata \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
-        train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory clean
+        train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
+        train_trajectory_regression inference_trajectory_regression clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -336,6 +340,25 @@ upload_soccerdata:
 	    ssh -p $(REMOTE_PORT) $(REMOTE) \
 	        "mkdir -p '$(REMOTE_DIR)/soccerdata_clips' && \
 	         cd '$(REMOTE_DIR)' && tar -xf -"
+
+train_trajectory_regression:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory_regression.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(COMMENTARY_CKPT) \
+	    --out_ckpt $(REGRESSION_CKPT) \
+	    --context_len $(SD_CONTEXT) \
+	    --K $(SD_K) \
+	    --step $(SD_STEP) \
+	    --device $(DEVICE)
+
+inference_trajectory_regression:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_trajectory_regression.py \
+	    --json_path checkpoints/trajectory_regression_test_split.json \
+	    --ckpt_path $(REGRESSION_CKPT) \
+	    --out_csv $(REGRESSION_CSV) \
+	    --K $(SD_K) \
+	    --context_len $(SD_CONTEXT) \
+	    --device $(DEVICE)
 
 clean:
 	docker image prune -f
