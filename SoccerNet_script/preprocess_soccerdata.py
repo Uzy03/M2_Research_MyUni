@@ -486,18 +486,26 @@ def main():
     # Apply max_games limit
     if args.max_games > 0:
         all_game_dirs = all_game_dirs[:args.max_games]
-    
-    print(f"Processing {len(all_game_dirs)} games")
-    
-    for game_dir in tqdm(all_game_dirs, desc="Processing games"):
+
+    # Load existing clips.json to find already-processed games
+    clips_json_path = output_dir / "clips.json"
+    if clips_json_path.exists():
+        with open(clips_json_path, encoding='utf-8') as f:
+            all_clips_metadata = json.load(f)
+        processed_games = {e['game_id'] for e in all_clips_metadata}
+        print(f"Already processed: {len(processed_games)} games ({len(all_clips_metadata)} clips)")
+    else:
+        processed_games = set()
+
+    pending = [d for d in all_game_dirs if d.name not in processed_games]
+    print(f"Processing {len(pending)} new games (skipping {len(all_game_dirs) - len(pending)} already done)")
+
+    for game_dir in tqdm(pending, desc="Processing games"):
         game_id = game_dir.name
         clips_metadata = process_game(game_dir, output_dir, game_id, args)
         all_clips_metadata.extend(clips_metadata)
-    
-    # Save clips.json
-    clips_json_path = output_dir / "clips.json"
-    with open(clips_json_path, 'w', encoding='utf-8') as f:
-        json.dump(all_clips_metadata, f, indent=2, ensure_ascii=False)
+        with open(clips_json_path, 'w', encoding='utf-8') as f:
+            json.dump(all_clips_metadata, f, indent=2, ensure_ascii=False)
     
     print(f"\nTotal clips: {len(all_clips_metadata)}")
     print(f"Saved to {output_dir}")

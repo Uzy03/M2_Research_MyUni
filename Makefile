@@ -59,6 +59,7 @@ SD_CONTEXT        := 20
 SD_K              := 5
 SD_STEP           := 1
 SD_MAXLEN         := 576
+SD_BATCH_SIZE     ?= 32
 
 DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -e CUDA_VISIBLE_DEVICES=$(GPU) \
@@ -354,6 +355,7 @@ train_trajectory_regression:
 	    --context_len $(SD_CONTEXT) \
 	    --K $(SD_K) \
 	    --step $(SD_STEP) \
+	    --batch_size $(SD_BATCH_SIZE) \
 	    --device $(DEVICE)
 
 inference_trajectory_regression:
@@ -372,6 +374,7 @@ train_action_alignment:
 	    --llm_ckpt $(LLM_CKPT) \
 	    --out_ckpt $(ACTION_CKPT) \
 	    --context_len $(SD_CONTEXT) \
+	    --batch_size $(SD_BATCH_SIZE) \
 	    --device $(DEVICE)
 
 inference_soccer_qa:
