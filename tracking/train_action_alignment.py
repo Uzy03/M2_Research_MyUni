@@ -233,8 +233,9 @@ def main():
     print("Step 7: チェックポイント保存")
     print("=" * 60)
     Path(args.out_ckpt).parent.mkdir(parents=True, exist_ok=True)
+    save_state = {k: v for k, v in model.state_dict().items() if not k.startswith('llama_model.')}
     torch.save(
-        {"state_dict": model.state_dict(), "instruction": INSTRUCTION},
+        {"state_dict": save_state, "instruction": INSTRUCTION},
         args.out_ckpt,
     )
     print(f"Checkpoint saved: {args.out_ckpt}")
