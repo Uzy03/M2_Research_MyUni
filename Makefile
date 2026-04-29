@@ -61,6 +61,8 @@ SD_STEP           := 1
 SD_MAXLEN         := 576
 BATCH_PHASE1      ?= 32
 BATCH_PHASE2      ?= 4
+EPOCHS_PHASE1     ?= 15
+EPOCHS_PHASE2     ?= 10
 
 DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -e CUDA_VISIBLE_DEVICES=$(GPU) \
@@ -357,6 +359,7 @@ train_trajectory_regression:
 	    --K $(SD_K) \
 	    --step $(SD_STEP) \
 	    --batch_size $(BATCH_PHASE1) \
+	    --epochs $(EPOCHS_PHASE1) \
 	    --device $(DEVICE)
 
 inference_trajectory_regression:
@@ -376,6 +379,7 @@ train_action_alignment:
 	    --out_ckpt $(ACTION_CKPT) \
 	    --context_len $(SD_CONTEXT) \
 	    --batch_size $(BATCH_PHASE2) \
+	    --epochs $(EPOCHS_PHASE2) \
 	    --device $(DEVICE)
 
 inference_soccer_qa:
