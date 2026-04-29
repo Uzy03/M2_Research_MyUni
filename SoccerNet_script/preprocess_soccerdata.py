@@ -145,6 +145,28 @@ def load_play_data(play_csv: Path) -> Tuple[pd.DataFrame, Dict[int, str]]:
         return pd.DataFrame(), {}
 
 
+SKIP_ACTION_IDS = {'1','2','3','4','19','25','26','40'}
+
+def get_action_sequence(
+    start_frame: int,
+    end_frame: int,
+    frame_to_action: Dict[int, Tuple[str, int]],
+) -> List[str]:
+    actions_in_window = [
+        (frame, action_id)
+        for frame, (action_id, _) in frame_to_action.items()
+        if start_frame <= frame <= end_frame and action_id not in SKIP_ACTION_IDS
+    ]
+    actions_in_window.sort(key=lambda x: x[0])
+    result = []
+    prev = None
+    for _, action_id in actions_in_window:
+        if action_id != prev:
+            result.append(action_id)
+            prev = action_id
+    return result
+
+
 def get_nearest_action(
     frame_num: int,
     frame_to_action: Dict[int, Tuple[str, int]],
@@ -352,6 +374,8 @@ def process_game(
                 
                 # Get action information
                 action_label, action_id = get_nearest_action(start_raw, frame_to_action)
+                end_raw = start_raw + window_raw
+                action_sequence = get_action_sequence(start_raw, end_raw, frame_to_action)
                 start_sec = start_raw / SRC_FPS
                 
                 # Create metadata entry
@@ -365,6 +389,7 @@ def process_game(
                     "start_sec": float(start_sec),
                     "action_label": action_label,
                     "action_id": int(action_id),
+                    "action_sequence": action_sequence,
                     "ball_coverage": float(ball_coverage),
                     "npy_path": npy_rel_path,
                     "mask_path": mask_rel_path,

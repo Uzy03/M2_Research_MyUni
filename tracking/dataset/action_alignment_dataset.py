@@ -21,7 +21,11 @@ class ActionAlignmentDataset(Dataset):
         self.context_len = context_len
         with open(json_path) as f:
             data = json.load(f)
-        self.entries = [e for e in data if str(e.get('action_label', '')) in ACTION_NAMES_EN]
+        self.entries = [
+            e for e in data
+            if e.get('action_sequence') and
+            any(a in ACTION_NAMES_EN for a in e['action_sequence'])
+        ]
 
     def __len__(self):
         return len(self.entries)
@@ -40,6 +44,7 @@ class ActionAlignmentDataset(Dataset):
             mask_np = np.concatenate([np.ones((pad, mask.shape[1]), dtype=bool), mask], axis=0)
         feat = torch.FloatTensor(feat_np)
         msk  = torch.BoolTensor(mask_np)
-        action_text = ACTION_NAMES_EN[str(entry['action_label'])]
+        names = [ACTION_NAMES_EN[a] for a in entry['action_sequence'] if a in ACTION_NAMES_EN]
+        action_text = ', '.join(dict.fromkeys(names)) if names else 'unknown'
         seq_id = entry.get('clip_id', str(idx))
         return feat, msk, action_text, seq_id

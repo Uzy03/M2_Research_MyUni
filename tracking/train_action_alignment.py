@@ -14,7 +14,7 @@ from tracking.dataset.action_alignment_dataset import ActionAlignmentDataset
 from model.matchvoice_model_tracking import matchvoice_model_tracking
 
 
-INSTRUCTION = 'What action is occurring in this soccer tracking data?'
+INSTRUCTION = 'List the soccer actions occurring in this tracking sequence in chronological order.'
 
 
 def make_collate_fn(tokenizer, max_length):
