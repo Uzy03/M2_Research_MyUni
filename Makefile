@@ -389,7 +389,7 @@ inference_trajectory_regression:
 
 train_action_alignment:
 	mkdir -p $(PHASE2_DIR)
-	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
 	    --json_path $(SD_JSON) \
 	    --ckpt_path $(REGRESSION_CKPT) \
 	    --llm_ckpt $(LLM_CKPT) \

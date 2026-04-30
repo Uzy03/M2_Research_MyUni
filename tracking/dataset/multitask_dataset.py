@@ -99,7 +99,8 @@ class MultiTaskDataset(Dataset):
                 min_dist, closest_n = d, n
         if closest_n == -1:
             return None
-        return "home team" if closest_n <= 11 else "away team"
+        team = "home" if closest_n <= 11 else "away"
+        return f"The {team} team has ball possession in this sequence."
 
     def _zone_label(self, npy, mask):
         ball_valid = ~mask[:, 0]
@@ -127,9 +128,14 @@ class MultiTaskDataset(Dataset):
                 if np.linalg.norm(npy[t, n, :2] - ball_pos) < 0.1:
                     speeds.append(npy[t, n, 2])
         if not speeds:
-            return "low pressure"
+            return "There is low pressure around the ball."
         avg = float(np.mean(speeds))
-        return "high pressure" if avg > 0.5 else ("medium pressure" if avg > 0.2 else "low pressure")
+        if avg > 0.5:
+            return "The players are applying high pressure around the ball."
+        elif avg > 0.2:
+            return "The players are applying medium pressure around the ball."
+        else:
+            return "There is low pressure around the ball."
 
     def __getitem__(self, idx):
         entry = self.entries[idx]
