@@ -1,3 +1,6 @@
+SHELL      := /bin/bash
+.SHELLFLAGS := -o pipefail -c
+
 IMAGE      := unisoccer
 REMOTE     := ujihara@solar.arch.cs.kumamoto-u.ac.jp
 REMOTE_PORT := 2222
@@ -30,12 +33,20 @@ TRAJECTORY_K       := 5
 TRAJECTORY_CONTEXT := 100
 TRAJECTORY_MAXLEN  := 576
 
-REGRESSION_CKPT := checkpoints/trajectory_regression.pth
 REGRESSION_CSV  := results/trajectory_regression_inference.csv
 
-ACTION_CKPT     := checkpoints/action_alignment.pth
 QA_CONFIG       ?= configs/qa_action.json
-QA_CSV          := results/soccer_qa_results.csv
+
+# Experiment run directory (timestamped)
+RUN_TS     ?= $(shell date +%Y%m%d%H%M)
+RUN_DIR    ?= checkpoints/$(RUN_TS)
+PHASE1_DIR  = $(RUN_DIR)/phase1
+PHASE2_DIR  = $(RUN_DIR)/phase2
+PHASE3_DIR  = $(RUN_DIR)/phase3
+REGRESSION_CKPT  = $(PHASE1_DIR)/trajectory_regression.pth
+ACTION_CKPT      = $(PHASE2_DIR)/action_alignment.pth
+QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
+MAX_GAMES       ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -79,7 +90,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
-        train_action_alignment inference_soccer_qa clean
+        train_action_alignment inference_soccer_qa run_pipeline clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -351,6 +362,7 @@ upload_soccerdata:
 	         cd '$(REMOTE_DIR)' && tar -xf -"
 
 train_trajectory_regression:
+	mkdir -p $(PHASE1_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory_regression.py \
 	    --json_path $(SD_JSON) \
 	    --ckpt_path $(COMMENTARY_CKPT) \
@@ -360,11 +372,13 @@ train_trajectory_regression:
 	    --step $(SD_STEP) \
 	    --batch_size $(BATCH_PHASE1) \
 	    --epochs $(EPOCHS_PHASE1) \
-	    --device $(DEVICE)
+	    --max_games $(MAX_GAMES) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE1_DIR)/train.log
 
 inference_trajectory_regression:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_trajectory_regression.py \
-	    --json_path checkpoints/trajectory_regression_test_split.json \
+	    --json_path $(PHASE1_DIR)/trajectory_regression_test_split.json \
 	    --ckpt_path $(REGRESSION_CKPT) \
 	    --out_csv $(REGRESSION_CSV) \
 	    --K $(SD_K) \
@@ -372,6 +386,7 @@ inference_trajectory_regression:
 	    --device $(DEVICE)
 
 train_action_alignment:
+	mkdir -p $(PHASE2_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
 	    --json_path $(SD_JSON) \
 	    --ckpt_path $(REGRESSION_CKPT) \
@@ -380,9 +395,12 @@ train_action_alignment:
 	    --context_len $(SD_CONTEXT) \
 	    --batch_size $(BATCH_PHASE2) \
 	    --epochs $(EPOCHS_PHASE2) \
-	    --device $(DEVICE)
+	    --max_games $(MAX_GAMES) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE2_DIR)/train.log
 
 inference_soccer_qa:
+	mkdir -p $(PHASE3_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
 	    --json_path $(SD_JSON) \
 	    --ckpt_path $(ACTION_CKPT) \
@@ -390,7 +408,15 @@ inference_soccer_qa:
 	    --config $(QA_CONFIG) \
 	    --out_csv $(QA_CSV) \
 	    --context_len $(SD_CONTEXT) \
-	    --device $(DEVICE)
+	    --max_games $(MAX_GAMES) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE3_DIR)/inference.log
+
+run_pipeline:
+	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
+	$(MAKE) train_trajectory_regression RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+	$(MAKE) train_action_alignment RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
 
 clean:
 	docker image prune -f

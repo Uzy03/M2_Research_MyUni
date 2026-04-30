@@ -6,24 +6,35 @@ from torch.utils.data import Dataset
 
 
 class TrajectoryRegressionDataset(Dataset):
-    def __init__(self, json_path, context_len=20, K=5, step=1):
+    def __init__(self, json_path, context_len=20, K=5, step=1, max_games=0):
         """
         Dataset for trajectory regression.
-        
+
         Args:
             json_path: Path to JSON file containing clip metadata
             context_len: Number of context frames to use as input
             K: Number of future frames to predict
             step: Stride for sliding window
+            max_games: Max number of games to use (0 = all)
         """
         self.context_len = context_len
         self.K = K
         self.step = step
         self.base_dir = Path(json_path).parent
-        
+
         # Load metadata
         with open(json_path) as f:
             self.data = json.load(f)
+
+        if max_games > 0:
+            seen, allowed = [], set()
+            for e in self.data:
+                if e['game_id'] not in allowed:
+                    seen.append(e['game_id'])
+                    if len(seen) > max_games:
+                        break
+                    allowed.add(e['game_id'])
+            self.data = [e for e in self.data if e['game_id'] in allowed]
         
         # Build sliding windows
         self.windows = []

@@ -125,6 +125,12 @@ def main():
         default=42,
         help="Random seed",
     )
+    parser.add_argument(
+        "--max_games",
+        type=int,
+        default=0,
+        help="Max number of games to use (0 = all)",
+    )
 
     args = parser.parse_args()
 
@@ -134,7 +140,7 @@ def main():
     print("=" * 60)
     random.seed(args.seed)
     full_dataset = TrajectoryRegressionDataset(
-        args.json_path, args.context_len, args.K, args.step
+        args.json_path, args.context_len, args.K, args.step, max_games=args.max_games
     )
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)

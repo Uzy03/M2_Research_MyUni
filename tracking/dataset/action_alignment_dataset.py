@@ -16,11 +16,20 @@ ACTION_NAMES_EN = {
 }
 
 class ActionAlignmentDataset(Dataset):
-    def __init__(self, json_path, context_len=20):
+    def __init__(self, json_path, context_len=20, max_games=0):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
             data = json.load(f)
+        if max_games > 0:
+            seen, allowed = [], set()
+            for e in data:
+                if e['game_id'] not in allowed:
+                    seen.append(e['game_id'])
+                    if len(seen) > max_games:
+                        break
+                    allowed.add(e['game_id'])
+            data = [e for e in data if e['game_id'] in allowed]
         self.entries = [
             e for e in data
             if e.get('action_sequence') and

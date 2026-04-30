@@ -126,6 +126,12 @@ def main():
         default=42,
         help="乱数シード",
     )
+    parser.add_argument(
+        "--max_games",
+        type=int,
+        default=0,
+        help="使用する試合数上限（0=全試合）",
+    )
 
     args = parser.parse_args()
 
@@ -133,7 +139,7 @@ def main():
     print("Step 1: データセット読み込み")
     print("=" * 60)
     random.seed(args.seed)
-    dataset = ActionAlignmentDataset(args.json_path, args.context_len)
+    dataset = ActionAlignmentDataset(args.json_path, args.context_len, max_games=args.max_games)
     print(f"Dataset: {len(dataset)} samples")
 
     print("\n" + "=" * 60)
@@ -161,6 +167,23 @@ def main():
         ckpt = torch.load(args.ckpt_path, map_location="cpu")
         state_dict = ckpt.get("state_dict", ckpt)
         state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
+        # Remap Phase 1 key names to Phase 2 naming convention
+        remap_prefix = {
+            "tracking_encoder.": "visual_encoder.",
+            "qformer.": "video_Qformer.",
+        }
+        remap_exact = {"query_tokens": "video_query_tokens"}
+        remapped = {}
+        for k, v in state_dict.items():
+            new_k = k
+            for old_p, new_p in remap_prefix.items():
+                if k.startswith(old_p):
+                    new_k = new_p + k[len(old_p):]
+                    break
+            if new_k == k and k in remap_exact:
+                new_k = remap_exact[k]
+            remapped[new_k] = v
+        state_dict = remapped
         model_state = model.state_dict()
         filtered = {
             k: v
@@ -175,7 +198,8 @@ def main():
         if skipped:
             print(f"Skipping size-mismatched keys: {skipped}")
         missing, unexpected = model.load_state_dict(filtered, strict=False)
-        print(f"Missing keys (expected for TrackingEncoder): {len(missing)}")
+        print(f"Loaded {len(filtered)} keys from Phase 1 checkpoint")
+        print(f"Missing keys (LLM + unmatched): {len(missing)}")
         print(f"Unexpected keys: {len(unexpected)}")
     else:
         print(f"WARNING: ckpt_path not found ({args.ckpt_path}), training from scratch")

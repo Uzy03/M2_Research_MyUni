@@ -20,6 +20,7 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.matchvoice_model_tracking import matchvoice_model_tracking
+from tracking.dataset.action_alignment_dataset import ACTION_NAMES_EN
 
 
 def parse_args():
@@ -75,6 +76,12 @@ def parse_args():
         default=42,
         help="Random seed for reproducibility",
     )
+    parser.add_argument(
+        "--max_games",
+        type=int,
+        default=0,
+        help="Max number of games to use (0 = all)",
+    )
     return parser.parse_args()
 
 
@@ -95,27 +102,38 @@ def load_config(config_path):
     return instruction, max_new_tokens
 
 
-def load_clips(json_path, max_samples, seed):
+def load_clips(json_path, max_samples, seed, max_games=0):
     """
     Load clips from JSON file and sample if needed.
-    
+
     Args:
         json_path: Path to clips.json
         max_samples: Maximum number of samples (0 = all)
         seed: Random seed
-    
+        max_games: Maximum number of games to use (0 = all)
+
     Returns:
         (clips_list, base_dir_path)
     """
     with open(json_path) as f:
         all_clips = json.load(f)
-    
+
+    if max_games > 0:
+        seen, allowed = [], set()
+        for e in all_clips:
+            if e['game_id'] not in allowed:
+                seen.append(e['game_id'])
+                if len(seen) > max_games:
+                    break
+                allowed.add(e['game_id'])
+        all_clips = [e for e in all_clips if e['game_id'] in allowed]
+
     random.seed(seed)
     if max_samples > 0 and len(all_clips) > max_samples:
         clips = random.sample(all_clips, max_samples)
     else:
         clips = all_clips
-    
+
     base_dir = Path(json_path).parent
     return clips, base_dir
 
@@ -239,7 +257,7 @@ def process_clip(model, base_dir, entry, context_len, device):
     
     return {
         "clip_id": entry.get("clip_id", ""),
-        "action_label": entry.get("action_label", ""),
+        "action_sequence": entry.get("action_sequence", []),
         "generated": generated,
     }
 
@@ -254,7 +272,7 @@ def main():
     print(f"[Config] max_new_tokens: {max_new_tokens}")
     
     # Step 2: Load and sample clips
-    clips, base_dir = load_clips(args.json_path, args.max_samples, args.seed)
+    clips, base_dir = load_clips(args.json_path, args.max_samples, args.seed, args.max_games)
     print(f"[Clips] Loaded {len(clips)} clips from {args.json_path}")
     
     # Step 3: Initialize model
@@ -274,20 +292,24 @@ def main():
             print(f"  → File not found, skipping")
             continue
         
+        seq = result["action_sequence"]
+        seq_text = ', '.join(dict.fromkeys(
+            ACTION_NAMES_EN[a] for a in seq if a in ACTION_NAMES_EN
+        )) if seq else ''
         results.append({
             "clip_id": result["clip_id"],
-            "action_label": result["action_label"],
+            "action_sequence": seq_text,
             "instruction": instruction,
             "generated": result["generated"],
         })
-        print(f"  → action={result['action_label']}")
+        print(f"  → action_sequence={seq_text}")
         print(f"  → generated: {result['generated'][:80]}...")
     
     # Step 5: Save results to CSV
     Path(args.out_csv).parent.mkdir(parents=True, exist_ok=True)
     with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["clip_id", "action_label", "instruction", "generated"]
+            f, fieldnames=["clip_id", "action_sequence", "instruction", "generated"]
         )
         writer.writeheader()
         writer.writerows(results)
