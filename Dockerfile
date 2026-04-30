@@ -48,7 +48,8 @@ RUN pip install --no-cache-dir \
         opencv-python==4.10.0.84 \
         SoccerNet==0.1.62 \
         huggingface_hub \
-        sentencepiece
+        sentencepiece \
+        rouge-score
 
 COPY . /workspace/
 

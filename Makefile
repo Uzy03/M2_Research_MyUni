@@ -88,7 +88,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         preprocess_sn_tracking preprocess_all_tracking _preprocess_all_tracking \
         verify_sn_tracking train_tracking inference_tracking \
         train_instruction inference_instruction_action \
-        download_soccerreplay preprocess_soccerdata upload_soccerdata \
+        download_soccerreplay preprocess_soccerdata add_task_labels upload_soccerdata \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
@@ -355,6 +355,10 @@ preprocess_soccerdata:
 	    --out_dir $(SOCCERDATA_OUT) \
 	    --config $(SOCCERDATA_CONFIG) \
 	    --max_games $(SOCCERDATA_MAX_GAMES)
+
+add_task_labels:
+	python SoccerNet_script/add_task_labels.py \
+	    --json_path $(SD_JSON)
 
 upload_soccerdata:
 	COPYFILE_DISABLE=1 tar --exclude='._*' --exclude='.DS_Store' -cf - \
