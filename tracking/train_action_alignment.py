@@ -7,140 +7,139 @@ import sys
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tracking.dataset.action_alignment_dataset import ActionAlignmentDataset
+from tracking.dataset.multitask_dataset import MultiTaskDataset, TASKS
 from model.matchvoice_model_tracking import matchvoice_model_tracking
-
-
-INSTRUCTION = 'List the soccer actions occurring in this tracking sequence in chronological order.'
 
 
 def make_collate_fn(tokenizer, max_length):
     def collate_fn(batch):
-        feats, masks, target_texts, seq_ids = zip(*batch)
+        feats, masks, instructions, target_texts, task_names, seq_ids = zip(*batch)
         tracking = torch.stack(feats)
         mask_tensor = torch.stack(masks)
 
         input_ids_list, labels_list, attn_list = [], [], []
-        for target_text in target_texts:
-            bos_id = tokenizer.bos_token_id
-            inst_ids = tokenizer(INSTRUCTION, add_special_tokens=False).input_ids
-            ans_ids = tokenizer(
-                target_text + tokenizer.eos_token, add_special_tokens=False
-            ).input_ids
-
-            full_ids = ([bos_id] + inst_ids + ans_ids)[: max_length]
-            lbl = ([-100] + [-100] * len(inst_ids) + ans_ids)[: max_length]
-
-            pad_len = max_length - len(full_ids)
-            attn = [1] * len(full_ids) + [0] * pad_len
+        bos_id = tokenizer.bos_token_id
+        for instruction, target_text in zip(instructions, target_texts):
+            inst_ids = tokenizer(instruction, add_special_tokens=False).input_ids
+            ans_ids  = tokenizer(target_text + tokenizer.eos_token, add_special_tokens=False).input_ids
+            full_ids = ([bos_id] + inst_ids + ans_ids)[:max_length]
+            lbl      = ([-100]   + [-100] * len(inst_ids) + ans_ids)[:max_length]
+            pad_len  = max_length - len(full_ids)
+            attn     = [1] * len(full_ids) + [0] * pad_len
             full_ids = full_ids + [tokenizer.pad_token_id] * pad_len
-            lbl = lbl + [-100] * pad_len
-
+            lbl      = lbl + [-100] * pad_len
             input_ids_list.append(full_ids)
             labels_list.append(lbl)
             attn_list.append(attn)
 
         return {
-            "tracking": tracking,
-            "mask": mask_tensor,
-            "input_ids": torch.tensor(input_ids_list, dtype=torch.long),
+            "tracking":       tracking,
+            "mask":           mask_tensor,
+            "input_ids":      torch.tensor(input_ids_list, dtype=torch.long),
             "attention_mask": torch.tensor(attn_list, dtype=torch.long),
-            "labels": torch.tensor(labels_list, dtype=torch.long),
-            "caption_text": list(target_texts),
-            "video_path": list(seq_ids),
+            "labels":         torch.tensor(labels_list, dtype=torch.long),
+            "caption_text":   list(target_texts),
+            "video_path":     list(seq_ids),
+            "instruction":    list(instructions),
+            "task_name":      list(task_names),
         }
-
     return collate_fn
+
+
+def compute_jaccard(pred: str, gt: str):
+    pred_set = set(pred.strip().split(', ')) if pred.strip() else set()
+    gt_set   = set(gt.strip().split(', '))   if gt.strip()   else set()
+    if not gt_set:
+        return None
+    union = pred_set | gt_set
+    return len(pred_set & gt_set) / len(union) if union else 0.0
+
+
+def evaluate_jaccard(model, dataset, device, max_eval=200, seed=0):
+    """Generate predictions on up to max_eval samples and compute per-task Jaccard."""
+    model.eval()
+    task_scores = {t['name']: [] for t in TASKS}
+
+    indices = list(range(len(dataset)))
+    rng = random.Random(seed)
+    if len(indices) > max_eval:
+        indices = rng.sample(indices, max_eval)
+
+    with torch.no_grad():
+        for idx in indices:
+            item = dataset[idx]
+            feat, msk, instruction, answer, task_name, seq_id = item
+            model.instruction = instruction
+            samples = {
+                "tracking":       feat.unsqueeze(0).to(device),
+                "mask":           msk.unsqueeze(0).to(device),
+                "caption_text":   [answer],
+                "video_path":     [seq_id],
+                "labels":         torch.zeros(1, 1, dtype=torch.long).to(device),
+                "attention_mask": torch.ones(1, 1, dtype=torch.long).to(device),
+                "input_ids":      torch.zeros(1, 1, dtype=torch.long).to(device),
+            }
+            generated_list, _, _ = model(samples, validating=True)
+            gen = generated_list[0] if generated_list else ""
+            j = compute_jaccard(gen, answer)
+            if j is not None:
+                task_scores[task_name].append(j)
+
+    model.train()
+    return {
+        t: (sum(s) / len(s) if s else float('nan'))
+        for t, s in task_scores.items()
+    }
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Action alignment fine-tuning with TrackingEncoder + Q-Former + LLM"
+        description="Phase 2: Multi-task action alignment with optional LoRA"
     )
-    parser.add_argument(
-        "--json_path",
-        type=str,
-        default="soccerdata_clips/fps1_sec30_onball_step5s/clips.json",
-        help="入力クリップデータ JSON パス",
-    )
-    parser.add_argument(
-        "--ckpt_path",
-        type=str,
-        default="checkpoints/trajectory_regression.pth",
-        help="Q-Former+LLM 初期化用チェックポイント",
-    )
-    parser.add_argument(
-        "--llm_ckpt",
-        type=str,
-        default="meta-llama/Meta-Llama-3-8B-Instruct",
-        help="LLM チェックポイント",
-    )
-    parser.add_argument(
-        "--out_ckpt",
-        type=str,
-        default="checkpoints/action_alignment.pth",
-        help="学習済みモデルの保存先",
-    )
-    parser.add_argument(
-        "--context_len",
-        type=int,
-        default=20,
-        help="コンテキストウィンドウの長さ（フレーム）",
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=10,
-        help="エポック数",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=1e-4,
-        help="学習率",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=4,
-        help="バッチサイズ",
-    )
-    parser.add_argument(
-        "--max_length",
-        type=int,
-        default=32,
-        help="トークナイザーの最大長",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda",
-        help="計算デバイス",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="乱数シード",
-    )
-    parser.add_argument(
-        "--max_games",
-        type=int,
-        default=0,
-        help="使用する試合数上限（0=全試合）",
-    )
-
+    parser.add_argument("--json_path",     type=str,   default="soccerdata_clips/fps1_sec30_onball_step5s/clips.json")
+    parser.add_argument("--ckpt_path",     type=str,   default="checkpoints/trajectory_regression.pth")
+    parser.add_argument("--llm_ckpt",      type=str,   default="meta-llama/Meta-Llama-3-8B-Instruct")
+    parser.add_argument("--out_ckpt",      type=str,   default="checkpoints/action_alignment.pth")
+    parser.add_argument("--context_len",   type=int,   default=20)
+    parser.add_argument("--epochs",        type=int,   default=10)
+    parser.add_argument("--lr",            type=float, default=1e-4)
+    parser.add_argument("--batch_size",    type=int,   default=4)
+    parser.add_argument("--max_length",    type=int,   default=32)
+    parser.add_argument("--test_ratio",    type=float, default=0.2)
+    parser.add_argument("--eval_interval", type=int,   default=5,
+                        help="Jaccard evaluation frequency (epochs). Also runs at final epoch.")
+    parser.add_argument("--device",        type=str,   default="cuda")
+    parser.add_argument("--seed",          type=int,   default=42)
+    parser.add_argument("--max_games",     type=int,   default=0)
+    parser.add_argument("--open_lora",     action="store_true",
+                        help="Enable LoRA to partially unfreeze LLM")
     args = parser.parse_args()
 
     print("=" * 60)
-    print("Step 1: データセット読み込み")
+    print("Step 1: データセット読み込み・train/val/test 分割")
     print("=" * 60)
     random.seed(args.seed)
-    dataset = ActionAlignmentDataset(args.json_path, args.context_len, max_games=args.max_games)
-    print(f"Dataset: {len(dataset)} samples")
+    full_dataset = MultiTaskDataset(args.json_path, args.context_len, max_games=args.max_games)
+    indices = list(range(len(full_dataset)))
+    random.shuffle(indices)
+    n_test = max(1, int(len(indices) * args.test_ratio))
+    n_val  = max(1, int(len(indices) * args.test_ratio))
+    test_indices  = indices[:n_test]
+    val_indices   = indices[n_test:n_test + n_val]
+    train_indices = indices[n_test + n_val:]
+    train_dataset = Subset(full_dataset, train_indices)
+    val_dataset   = Subset(full_dataset, val_indices)
+    test_dataset  = Subset(full_dataset, test_indices)
+    print(f"Total: {len(full_dataset)}  Train: {len(train_indices)}  Val: {len(val_indices)}  Test: {len(test_indices)}")
+
+    split_json = Path(args.out_ckpt).parent / "action_alignment_splits.json"
+    split_json.parent.mkdir(parents=True, exist_ok=True)
+    with open(split_json, 'w') as f:
+        json.dump({"train": train_indices, "val": val_indices, "test": test_indices}, f)
+    print(f"Splits saved: {split_json}")
 
     print("\n" + "=" * 60)
     print("Step 2: モデル初期化")
@@ -151,28 +150,24 @@ def main():
         need_temporal="yes",
         llm_ckpt=args.llm_ckpt,
         tokenizer_ckpt=args.llm_ckpt,
-        open_llm_decoder=False,
+        open_llm_decoder=args.open_lora,
         num_players=23,
         in_features=5,
         d_model=256,
         max_frame_pos=200,
     )
     model.to(args.device)
-    print(f"Model initialized and moved to {args.device}")
+    print(f"LoRA: {'enabled' if args.open_lora else 'disabled'}")
 
     print("\n" + "=" * 60)
-    print("Step 3: 既存チェックポイントからロード")
+    print("Step 3: Phase 1 チェックポイントロード")
     print("=" * 60)
     if args.ckpt_path and os.path.exists(args.ckpt_path):
         ckpt = torch.load(args.ckpt_path, map_location="cpu")
         state_dict = ckpt.get("state_dict", ckpt)
         state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-        # Remap Phase 1 key names to Phase 2 naming convention
-        remap_prefix = {
-            "tracking_encoder.": "visual_encoder.",
-            "qformer.": "video_Qformer.",
-        }
-        remap_exact = {"query_tokens": "video_query_tokens"}
+        remap_prefix = {"tracking_encoder.": "visual_encoder.", "qformer.": "video_Qformer."}
+        remap_exact  = {"query_tokens": "video_query_tokens"}
         remapped = {}
         for k, v in state_dict.items():
             new_k = k
@@ -183,89 +178,102 @@ def main():
             if new_k == k and k in remap_exact:
                 new_k = remap_exact[k]
             remapped[new_k] = v
-        state_dict = remapped
         model_state = model.state_dict()
-        filtered = {
-            k: v
-            for k, v in state_dict.items()
-            if k in model_state and model_state[k].shape == v.shape
-        }
-        skipped = [
-            k
-            for k, v in state_dict.items()
-            if k in model_state and model_state[k].shape != v.shape
-        ]
+        filtered = {k: v for k, v in remapped.items() if k in model_state and model_state[k].shape == v.shape}
+        skipped = [k for k, v in remapped.items() if k in model_state and model_state[k].shape != v.shape]
         if skipped:
             print(f"Skipping size-mismatched keys: {skipped}")
-        missing, unexpected = model.load_state_dict(filtered, strict=False)
-        print(f"Loaded {len(filtered)} keys from Phase 1 checkpoint")
-        print(f"Missing keys (LLM + unmatched): {len(missing)}")
-        print(f"Unexpected keys: {len(unexpected)}")
+        missing, _ = model.load_state_dict(filtered, strict=False)
+        print(f"Loaded {len(filtered)} keys from Phase 1 checkpoint, missing: {len(missing)}")
     else:
         print(f"WARNING: ckpt_path not found ({args.ckpt_path}), training from scratch")
 
     print("\n" + "=" * 60)
-    print("Step 4: collate_fn 定義")
+    print("Step 4: DataLoader 作成")
     print("=" * 60)
     if model.tokenizer.pad_token is None:
         model.tokenizer.pad_token = model.tokenizer.eos_token
-
     collate_fn = make_collate_fn(model.tokenizer, args.max_length)
-    print("collate_fn created")
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+                              collate_fn=collate_fn, num_workers=4, pin_memory=True)
+    val_loader   = DataLoader(val_dataset,   batch_size=args.batch_size, shuffle=False,
+                              collate_fn=collate_fn, num_workers=4, pin_memory=True)
+    print(f"Train: {len(train_loader)} batches  Val: {len(val_loader)} batches")
 
     print("\n" + "=" * 60)
-    print("Step 5: DataLoader 作成")
-    print("=" * 60)
-    train_loader = DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        collate_fn=collate_fn,
-        num_workers=4,
-        pin_memory=True,
-    )
-    print(f"DataLoader created: {len(train_loader)} batches")
-
-    print("\n" + "=" * 60)
-    print("Step 6: 訓練ループ")
+    print("Step 5: 訓練ループ")
     print("=" * 60)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    model.train()
-
     log_csv = Path(args.out_ckpt).with_suffix('.train_log.csv')
     with open(log_csv, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["epoch", "train_loss"])
+        csv.writer(f).writerow(
+            ["epoch", "train_loss", "val_loss",
+             "j_action", "j_possession", "j_zone", "j_pressure"]
+        )
 
     for epoch in range(1, args.epochs + 1):
-        total_loss = 0.0
+        # --- train ---
+        model.train()
+        total_train = 0.0
         for batch in train_loader:
-            batch = {
-                k: v.to(args.device) if isinstance(v, torch.Tensor) else v
-                for k, v in batch.items()
-            }
+            batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             optimizer.zero_grad()
             loss = model(batch, validating=False)
             if torch.isnan(loss):
                 continue
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
-        avg_loss = total_loss / len(train_loader)
-        print(f"Epoch {epoch}/{args.epochs}  train_loss={avg_loss:.4f}")
+            total_train += loss.item()
+        avg_train = total_train / len(train_loader)
+
+        # --- val loss ---
+        model.eval()
+        total_val = 0.0
+        n_val_batches = 0
+        with torch.no_grad():
+            for batch in val_loader:
+                batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                loss = model(batch, validating=False)
+                if not torch.isnan(loss):
+                    total_val += loss.item()
+                    n_val_batches += 1
+        avg_val = total_val / max(1, n_val_batches)
+
+        # --- Jaccard (every eval_interval epochs and final epoch) ---
+        nan = float('nan')
+        j = {t['name']: nan for t in TASKS}
+        do_jaccard = (epoch % args.eval_interval == 0) or (epoch == args.epochs)
+        if do_jaccard:
+            j = evaluate_jaccard(model, val_dataset, args.device)
+
+        print(
+            f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}"
+            + (f"  j_action={j['action']:.3f}  j_possession={j['possession']:.3f}"
+               f"  j_zone={j['zone']:.3f}  j_pressure={j['pressure']:.3f}"
+               if do_jaccard else "")
+        )
         with open(log_csv, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([epoch, f"{avg_loss:.6f}"])
+            csv.writer(f).writerow([
+                epoch, f"{avg_train:.6f}", f"{avg_val:.6f}",
+                f"{j['action']:.4f}", f"{j['possession']:.4f}",
+                f"{j['zone']:.4f}",   f"{j['pressure']:.4f}",
+            ])
+
+    print("\n" + "=" * 60)
+    print("Step 6: テスト評価")
+    print("=" * 60)
+    test_j = evaluate_jaccard(model, test_dataset, args.device)
+    print(
+        f"Test Jaccard  action={test_j['action']:.4f}  possession={test_j['possession']:.4f}"
+        f"  zone={test_j['zone']:.4f}  pressure={test_j['pressure']:.4f}"
+    )
 
     print("\n" + "=" * 60)
     print("Step 7: チェックポイント保存")
     print("=" * 60)
     Path(args.out_ckpt).parent.mkdir(parents=True, exist_ok=True)
     save_state = {k: v for k, v in model.state_dict().items() if not k.startswith('llama_model.')}
-    torch.save(
-        {"state_dict": save_state, "instruction": INSTRUCTION},
-        args.out_ckpt,
-    )
+    torch.save({"state_dict": save_state}, args.out_ckpt)
     print(f"Checkpoint saved: {args.out_ckpt}")
     print("=" * 60)
     print("学習完了！")

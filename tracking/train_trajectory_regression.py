@@ -272,9 +272,32 @@ def main():
             writer = csv.writer(f)
             writer.writerow([epoch, f"{avg_train_loss:.6f}", f"{val_ade:.6f}"])
 
-    # Step 6: Save checkpoint
+    # Step 6: Test evaluation
     print("\n" + "=" * 60)
-    print("Step 6: Saving checkpoint")
+    print("Step 6: Test evaluation")
+    print("=" * 60)
+    model.eval()
+    test_ade, test_count = 0.0, 0
+    test_loader = DataLoader(
+        val_dataset, batch_size=args.batch_size, shuffle=False,
+        collate_fn=collate_fn, num_workers=4, pin_memory=True,
+    )
+    with torch.no_grad():
+        for batch in test_loader:
+            batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            pred = model(batch['tracking'], batch['mask'])
+            ade = compute_ade(pred, batch['target_xy'], batch['target_mask'])
+            if not (ade != ade):
+                test_ade += ade
+                test_count += 1
+    test_ade = test_ade / max(1, test_count) if test_count > 0 else float('nan')
+    print(f"Final test_ade={test_ade:.4f}")
+    with open(log_csv, "a", newline="") as f:
+        csv.writer(f).writerow(["test", "", f"{test_ade:.6f}"])
+
+    # Step 7: Save checkpoint
+    print("\n" + "=" * 60)
+    print("Step 7: Saving checkpoint")
     print("=" * 60)
     Path(args.out_ckpt).parent.mkdir(parents=True, exist_ok=True)
     torch.save(

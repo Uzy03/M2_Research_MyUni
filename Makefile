@@ -47,6 +47,8 @@ REGRESSION_CKPT  = $(PHASE1_DIR)/trajectory_regression.pth
 ACTION_CKPT      = $(PHASE2_DIR)/action_alignment.pth
 QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
+OPEN_LORA       ?= 1
+EVAL_INTERVAL   ?= 5
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -396,6 +398,8 @@ train_action_alignment:
 	    --batch_size $(BATCH_PHASE2) \
 	    --epochs $(EPOCHS_PHASE2) \
 	    --max_games $(MAX_GAMES) \
+	    --eval_interval $(EVAL_INTERVAL) \
+	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
