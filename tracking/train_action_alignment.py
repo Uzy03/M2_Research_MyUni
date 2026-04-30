@@ -114,7 +114,8 @@ def main():
     parser.add_argument("--lr",            type=float, default=1e-4)
     parser.add_argument("--batch_size",    type=int,   default=4)
     parser.add_argument("--max_length",    type=int,   default=32)
-    parser.add_argument("--test_ratio",    type=float, default=0.2)
+    parser.add_argument("--test_ratio",    type=float, default=0.1,
+                        help="Val/test data ratio each (train = 1 - 2*test_ratio)")
     parser.add_argument("--eval_interval", type=int,   default=5,
                         help="Jaccard evaluation frequency (epochs). Also runs at final epoch.")
     parser.add_argument("--device",        type=str,   default="cuda")
@@ -245,9 +246,9 @@ def main():
                     n_val_batches += 1
         avg_val = total_val / max(1, n_val_batches)
 
-        # --- Jaccard (every eval_interval epochs and final epoch) ---
+        # --- ROUGE-L (every eval_interval epochs and final epoch) ---
         nan = float('nan')
-                r = {t['name']: nan for t in TASKS}
+        r = {t['name']: nan for t in TASKS}
         do_rouge = (epoch % args.eval_interval == 0) or (epoch == args.epochs)
         if do_rouge:
             r = evaluate_rouge(model, val_dataset, args.device)

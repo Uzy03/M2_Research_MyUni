@@ -110,8 +110,8 @@ def main():
     parser.add_argument(
         "--test_ratio",
         type=float,
-        default=0.2,
-        help="Test data ratio",
+        default=0.1,
+        help="Val/test data ratio each (train = 1 - 2*test_ratio)",
     )
     parser.add_argument(
         "--device",
@@ -134,9 +134,9 @@ def main():
 
     args = parser.parse_args()
 
-    # Step 1: Load dataset and split into train/test
+    # Step 1: Load dataset and split into train/val/test
     print("=" * 60)
-    print("Step 1: Loading dataset and train/test split")
+    print("Step 1: Loading dataset and train/val/test split")
     print("=" * 60)
     random.seed(args.seed)
     full_dataset = TrajectoryRegressionDataset(
@@ -145,31 +145,24 @@ def main():
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
     n_test = max(1, int(len(indices) * args.test_ratio))
-    test_indices = indices[:n_test]
-    train_indices = indices[n_test:]
+    n_val  = max(1, int(len(indices) * args.test_ratio))
+    test_indices  = indices[:n_test]
+    val_indices   = indices[n_test:n_test + n_val]
+    train_indices = indices[n_test + n_val:]
     train_dataset = Subset(full_dataset, train_indices)
-    val_dataset = Subset(full_dataset, test_indices)
+    val_dataset   = Subset(full_dataset, val_indices)
+    test_dataset  = Subset(full_dataset, test_indices)
     print(
         f"Full dataset: {len(full_dataset)} samples, "
-        f"Train: {len(train_indices)}, Val: {len(test_indices)}"
+        f"Train: {len(train_indices)}, Val: {len(val_indices)}, Test: {len(test_indices)}"
     )
 
     # Save test split
-    test_json = Path(args.out_ckpt).parent / "trajectory_regression_test_split.json"
-    test_json.parent.mkdir(parents=True, exist_ok=True)
-    test_windows = [
-        {
-            "clip_idx": full_dataset.windows[i][0],
-            "start_frame": full_dataset.windows[i][1],
-            "npy_path": str(full_dataset.base_dir / full_dataset.data[full_dataset.windows[i][0]]["npy_path"]),
-            "mask_path": str(full_dataset.base_dir / full_dataset.data[full_dataset.windows[i][0]]["mask_path"]),
-            "seq_id": full_dataset.data[full_dataset.windows[i][0]].get("seq_id", ""),
-        }
-        for i in test_indices
-    ]
-    with open(test_json, "w") as f:
-        json.dump(test_windows, f, ensure_ascii=False, indent=2)
-    print(f"Test split saved: {test_json} ({len(test_windows)} samples)")
+    split_json = Path(args.out_ckpt).parent / "trajectory_regression_splits.json"
+    split_json.parent.mkdir(parents=True, exist_ok=True)
+    with open(split_json, "w") as f:
+        json.dump({"train": train_indices, "val": val_indices, "test": test_indices}, f)
+    print(f"Splits saved: {split_json}")
 
     # Step 2: Initialize model
     print("\n" + "=" * 60)
@@ -279,7 +272,7 @@ def main():
     model.eval()
     test_ade, test_count = 0.0, 0
     test_loader = DataLoader(
-        val_dataset, batch_size=args.batch_size, shuffle=False,
+        test_dataset, batch_size=args.batch_size, shuffle=False,
         collate_fn=collate_fn, num_workers=4, pin_memory=True,
     )
     with torch.no_grad():
