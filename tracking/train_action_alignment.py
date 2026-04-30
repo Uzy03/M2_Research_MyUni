@@ -13,7 +13,7 @@ from rouge_score import rouge_scorer as rs
 from torch.utils.data import DataLoader, Subset
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tracking.dataset.multitask_dataset import MultiTaskDataset, TASKS
+from tracking.dataset.multitask_dataset import MultiTaskDataset, TASKS, ACTION_VOCAB
 from model.matchvoice_model_tracking import matchvoice_model_tracking
 
 
@@ -53,6 +53,7 @@ def make_collate_fn(tokenizer, max_length):
 
 
 _rouge_scorer = rs.RougeScorer(['rougeL'], use_stemmer=True)
+_ACTION_VOCAB_SET = set(ACTION_VOCAB)
 
 
 def compute_rouge_l(pred: str, gt: str):
@@ -61,9 +62,23 @@ def compute_rouge_l(pred: str, gt: str):
     return _rouge_scorer.score(gt, pred)['rougeL'].fmeasure
 
 
-def evaluate_rouge(model, dataset, device, max_eval=200, seed=0):
-    """Generate predictions on up to max_eval samples and compute per-task ROUGE-L."""
-    # suppress repetitive generation warnings
+def compute_f1_action(pred: str, gt: str):
+    if not gt.strip():
+        return None
+    gt_labels   = {w.strip() for w in gt.split(',')   if w.strip() in _ACTION_VOCAB_SET}
+    pred_labels = {w.strip() for w in pred.split(',') if w.strip() in _ACTION_VOCAB_SET}
+    if not gt_labels:
+        return None
+    if not pred_labels:
+        return 0.0
+    tp = len(pred_labels & gt_labels)
+    p  = tp / len(pred_labels)
+    r  = tp / len(gt_labels)
+    return 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+
+
+def evaluate_metrics(model, dataset, device, max_eval=200, seed=0):
+    """Generate predictions and compute per-task metrics (F1 for action, ROUGE-L for others)."""
     logging.getLogger("transformers").setLevel(logging.ERROR)
     warnings.filterwarnings("ignore", message=".*attention mask.*")
     model.eval()
@@ -90,9 +105,12 @@ def evaluate_rouge(model, dataset, device, max_eval=200, seed=0):
             }
             generated_list, _, _ = model(samples, validating=True)
             gen = generated_list[0] if generated_list else ""
-            r = compute_rouge_l(gen, answer)
-            if r is not None:
-                task_scores[task_name].append(r)
+            if task_name == 'action':
+                score = compute_f1_action(gen, answer)
+            else:
+                score = compute_rouge_l(gen, answer)
+            if score is not None:
+                task_scores[task_name].append(score)
 
     model.train()
     return {
@@ -215,7 +233,7 @@ def main():
     with open(log_csv, "w", newline="") as f:
         csv.writer(f).writerow(
             ["epoch", "train_loss", "val_loss",
-             "rouge_action", "rouge_possession", "rouge_zone", "rouge_pressure"]
+             "f1_action", "rouge_possession", "rouge_zone", "rouge_pressure"]
         )
 
     for epoch in range(1, args.epochs + 1):
@@ -246,18 +264,18 @@ def main():
                     n_val_batches += 1
         avg_val = total_val / max(1, n_val_batches)
 
-        # --- ROUGE-L (every eval_interval epochs and final epoch) ---
+        # --- metrics (every eval_interval epochs and final epoch) ---
         nan = float('nan')
         r = {t['name']: nan for t in TASKS}
-        do_rouge = (epoch % args.eval_interval == 0) or (epoch == args.epochs)
-        if do_rouge:
-            r = evaluate_rouge(model, val_dataset, args.device)
+        do_eval = (epoch % args.eval_interval == 0) or (epoch == args.epochs)
+        if do_eval:
+            r = evaluate_metrics(model, val_dataset, args.device)
 
         print(
             f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}"
-            + (f"  rouge_action={r['action']:.3f}  rouge_possession={r['possession']:.3f}"
+            + (f"  f1_action={r['action']:.3f}  rouge_possession={r['possession']:.3f}"
                f"  rouge_zone={r['zone']:.3f}  rouge_pressure={r['pressure']:.3f}"
-               if do_rouge else "")
+               if do_eval else "")
         )
         with open(log_csv, "a", newline="") as f:
             csv.writer(f).writerow([
@@ -269,10 +287,10 @@ def main():
     print("\n" + "=" * 60)
     print("Step 6: テスト評価")
     print("=" * 60)
-    test_r = evaluate_rouge(model, test_dataset, args.device)
+    test_r = evaluate_metrics(model, test_dataset, args.device)
     print(
-        f"Test ROUGE-L  action={test_r['action']:.4f}  possession={test_r['possession']:.4f}"
-        f"  zone={test_r['zone']:.4f}  pressure={test_r['pressure']:.4f}"
+        f"Test  f1_action={test_r['action']:.4f}  rouge_possession={test_r['possession']:.4f}"
+        f"  rouge_zone={test_r['zone']:.4f}  rouge_pressure={test_r['pressure']:.4f}"
     )
 
     print("\n" + "=" * 60)

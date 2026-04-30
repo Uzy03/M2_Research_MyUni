@@ -92,7 +92,8 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
-        train_action_alignment inference_soccer_qa run_pipeline clean
+        train_action_alignment inference_soccer_qa run_pipeline \
+        check smoke_phase2 clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
@@ -425,6 +426,31 @@ run_pipeline:
 	$(MAKE) train_trajectory_regression RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
 	$(MAKE) train_action_alignment RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
 	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+
+check:
+	python -m py_compile tracking/train_action_alignment.py
+	python -m py_compile tracking/train_trajectory_regression.py
+	python -m py_compile tracking/dataset/multitask_dataset.py
+	python -m py_compile tracking/encoder.py
+	python -m py_compile SoccerNet_script/add_task_labels.py
+	python tracking/tests/test_phase2.py
+	@echo "All checks passed!"
+
+smoke_phase2:
+	mkdir -p $(PHASE2_DIR)
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(REGRESSION_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(ACTION_CKPT) \
+	    --context_len $(SD_CONTEXT) \
+	    --batch_size 2 \
+	    --epochs 1 \
+	    --max_games 1 \
+	    --eval_interval 1 \
+	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE2_DIR)/smoke.log
 
 clean:
 	docker image prune -f

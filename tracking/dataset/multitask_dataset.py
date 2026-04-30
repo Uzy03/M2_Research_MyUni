@@ -5,25 +5,57 @@ import torch
 from pathlib import Path
 from torch.utils.data import Dataset
 
+ACTION_NAMES_EN = {
+    '15': 'shot', '16': 'goalkeeper save', '17': 'direct free kick',
+    '21': 'corner kick', '22': 'indirect free kick', '23': 'offside',
+    '27': 'foul', '29': 'pass', '30': 'pass',
+    '35': 'dribble', '36': 'through pass', '37': 'clearance',
+    '38': 'foul received', '41': 'interception', '42': 'clearance',
+    '43': 'block', '44': 'throw-in', '45': 'cross',
+    '50': 'trap', '72': 'feed', '73': 'touch', '74': 'tackle',
+    '75': 'flick-on',
+}
+ACTION_VOCAB = sorted(set(ACTION_NAMES_EN.values()))
+_ACTION_VOCAB_STR = ", ".join(ACTION_VOCAB)
+
 TASKS = [
     {
         "name": "action",
-        "instruction": "List the soccer actions occurring in this tracking sequence in chronological order.",
+        "instruction": (
+            "List the soccer actions in this tracking sequence as comma-separated keywords. "
+            f"Use only: {_ACTION_VOCAB_STR}."
+        ),
         "label_field": "label_action",
     },
     {
         "name": "possession",
-        "instruction": "Which team has ball possession in this sequence?",
+        "instruction": (
+            "Which team has ball possession in this sequence? "
+            "Answer with exactly one of: "
+            "'The home team has ball possession in this sequence.' or "
+            "'The away team has ball possession in this sequence.'"
+        ),
         "label_field": "label_possession",
     },
     {
         "name": "zone",
-        "instruction": "Where on the field is the play occurring in this sequence?",
+        "instruction": (
+            "Where on the field is the play occurring? "
+            "Answer using the template: 'The play is in the {side} of the {third}.' "
+            "Side: left side / center / right side. "
+            "Third: defensive third / middle third / attacking third."
+        ),
         "label_field": "label_zone",
     },
     {
         "name": "pressure",
-        "instruction": "Describe the pressing intensity in this sequence.",
+        "instruction": (
+            "Describe the pressing intensity in this sequence. "
+            "Answer with exactly one of: "
+            "'The players are applying high pressure around the ball.' / "
+            "'The players are applying medium pressure around the ball.' / "
+            "'There is low pressure around the ball.'"
+        ),
         "label_field": "label_pressure",
     },
 ]
