@@ -47,8 +47,11 @@ class TrackingEncoder(nn.Module):
             batch_first=True,
             dropout=0.1,
         )
+        # enable_nested_tensor=False: prevents PyTorch from compressing padded
+        # sequences into variable-length nested tensors, which would shrink the
+        # output's player dimension and break the subsequent mean-pooling step.
         self.spatial_transformer = TransformerEncoder(
-            spatial_layer, num_layers=num_spatial_layers
+            spatial_layer, num_layers=num_spatial_layers, enable_nested_tensor=False
         )
 
         # 時間トランスフォーマー（タイムステップ間の時系列関係をモデル）
