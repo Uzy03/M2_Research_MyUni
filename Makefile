@@ -469,7 +469,7 @@ smoke:
 	    --context_len $(SD_CONTEXT) \
 	    --K $(SD_K) --step $(SD_STEP) \
 	    --batch_size 2 --epochs 1 \
-	    --max_samples 5 \
+	    --max_samples 50 \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P1)/smoke.log
 	@echo "=== smoke: Phase 2 ==="
@@ -492,7 +492,7 @@ smoke:
 	    --config $(QA_CONFIG) \
 	    --out_csv $(SMOKE_P3)/smoke_results.csv \
 	    --context_len $(SD_CONTEXT) \
-	    --max_samples 5 \
+	    --max_samples 50 \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P3)/smoke.log
 	@echo "=== smoke done: $(SMOKE_DIR) ==="
@@ -507,7 +507,7 @@ smoke_phase2:
 	    --context_len $(SD_CONTEXT) \
 	    --batch_size 2 \
 	    --epochs 1 \
-	    --max_samples 5 \
+	    --max_samples 50 \
 	    --eval_interval 1 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --device $(DEVICE) \

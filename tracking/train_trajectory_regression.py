@@ -193,6 +193,8 @@ def main():
     if args.ckpt_path and os.path.exists(args.ckpt_path):
         model.load_pretrained(args.ckpt_path)
         print(f"Pre-trained weights loaded from {args.ckpt_path}")
+    elif not args.ckpt_path:
+        print("No ckpt_path specified, training from scratch")
     else:
         print(f"WARNING: ckpt_path not found ({args.ckpt_path}), training from scratch")
 
