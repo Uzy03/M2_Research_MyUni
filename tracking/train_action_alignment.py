@@ -131,11 +131,9 @@ def main():
     parser.add_argument("--epochs",        type=int,   default=10)
     parser.add_argument("--lr",            type=float, default=1e-4)
     parser.add_argument("--batch_size",    type=int,   default=4)
-    parser.add_argument("--max_length",    type=int,   default=32)
+    parser.add_argument("--max_length",    type=int,   default=128)
     parser.add_argument("--test_ratio",    type=float, default=0.1,
                         help="Val/test data ratio each (train = 1 - 2*test_ratio)")
-    parser.add_argument("--eval_interval", type=int,   default=5,
-                        help="Jaccard evaluation frequency (epochs). Also runs at final epoch.")
     parser.add_argument("--device",        type=str,   default="cuda")
     parser.add_argument("--seed",          type=int,   default=42)
     parser.add_argument("--max_games",     type=int,   default=0)
@@ -235,10 +233,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     log_csv = Path(args.out_ckpt).with_suffix('.train_log.csv')
     with open(log_csv, "w", newline="") as f:
-        csv.writer(f).writerow(
-            ["epoch", "train_loss", "val_loss",
-             "f1_action", "rouge_possession", "rouge_zone", "rouge_pressure"]
-        )
+        csv.writer(f).writerow(["epoch", "train_loss", "val_loss"])
 
     for epoch in range(1, args.epochs + 1):
         # --- train ---
@@ -268,25 +263,9 @@ def main():
                     n_val_batches += 1
         avg_val = total_val / max(1, n_val_batches)
 
-        # --- metrics (every eval_interval epochs and final epoch) ---
-        nan = float('nan')
-        r = {t['name']: nan for t in TASKS}
-        do_eval = (epoch % args.eval_interval == 0) or (epoch == args.epochs)
-        if do_eval:
-            r = evaluate_metrics(model, val_dataset, args.device)
-
-        print(
-            f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}"
-            + (f"  f1_action={r['action']:.3f}  rouge_possession={r['possession']:.3f}"
-               f"  rouge_zone={r['zone']:.3f}  rouge_pressure={r['pressure']:.3f}"
-               if do_eval else "")
-        )
+        print(f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}")
         with open(log_csv, "a", newline="") as f:
-            csv.writer(f).writerow([
-                epoch, f"{avg_train:.6f}", f"{avg_val:.6f}",
-                f"{r['action']:.4f}", f"{r['possession']:.4f}",
-                f"{r['zone']:.4f}",   f"{r['pressure']:.4f}",
-            ])
+            csv.writer(f).writerow([epoch, f"{avg_train:.6f}", f"{avg_val:.6f}"])
 
     print("\n" + "=" * 60)
     print("Step 6: テスト評価")

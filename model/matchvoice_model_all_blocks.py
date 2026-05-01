@@ -265,10 +265,13 @@ class matchvoice_model_all_blocks(nn.Module):
             parts.append(inst_embeds)
 
         combined = torch.cat(parts, dim=1).to(dtype=torch.float16)
+        attn_mask = torch.ones(combined.shape[:2], dtype=torch.long, device=combined.device)
 
         gen_kwargs = dict(
             renormalize_logits=True,
             inputs_embeds=combined,
+            attention_mask=attn_mask,
+            pad_token_id=self.tokenizer.eos_token_id,
             max_new_tokens=self._max_new_tokens,
             num_beams=5,
             do_sample=True,

@@ -421,7 +421,6 @@ train_action_alignment:
 	    --batch_size $(BATCH_PHASE2) \
 	    --epochs $(EPOCHS_PHASE2) \
 	    --max_games $(MAX_GAMES) \
-	    --eval_interval $(EVAL_INTERVAL) \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
@@ -432,8 +431,7 @@ inference_soccer_qa:
 	    --json_path $(SD_JSON) \
 	    --ckpt_path $(ACTION_CKPT) \
 	    --llm_ckpt $(LLM_CKPT) \
-	    --config $(QA_CONFIG) \
-	    --out_csv $(QA_CSV) \
+	    --out_csv $(PHASE3_DIR)/results.csv \
 	    --context_len $(SD_CONTEXT) \
 	    --max_games $(MAX_GAMES) \
 	    --device $(DEVICE) \
@@ -480,7 +478,7 @@ smoke:
 	    --out_ckpt $(SMOKE_P2)/action_alignment.pth \
 	    --context_len $(SD_CONTEXT) \
 	    --batch_size 2 --epochs 1 \
-	    --max_samples 5 --eval_interval 1 \
+	    --max_samples 50 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P2)/smoke.log
@@ -489,7 +487,6 @@ smoke:
 	    --json_path $(SD_JSON) \
 	    --ckpt_path $(SMOKE_P2)/action_alignment.pth \
 	    --llm_ckpt $(LLM_CKPT) \
-	    --config $(QA_CONFIG) \
 	    --out_csv $(SMOKE_P3)/smoke_results.csv \
 	    --context_len $(SD_CONTEXT) \
 	    --max_samples 50 \
@@ -508,7 +505,6 @@ smoke_phase2:
 	    --batch_size 2 \
 	    --epochs 1 \
 	    --max_samples 50 \
-	    --eval_interval 1 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/smoke.log
