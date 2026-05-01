@@ -146,6 +146,7 @@ def main():
             if not gt:
                 continue
             model.instruction = task['instruction']
+            model._max_new_tokens = task.get('max_new_tokens', args.max_new_tokens)
             samples = {
                 "tracking":       tracking,
                 "mask":           mask_t,

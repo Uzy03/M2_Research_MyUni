@@ -26,6 +26,7 @@ TASKS = [
             f"Use only: {_ACTION_VOCAB_STR}."
         ),
         "label_field": "label_action",
+        "max_new_tokens": 80,
     },
     {
         "name": "possession",
@@ -36,6 +37,7 @@ TASKS = [
             "'The away team has ball possession in this sequence.'"
         ),
         "label_field": "label_possession",
+        "max_new_tokens": 40,
     },
     {
         "name": "zone",
@@ -46,6 +48,7 @@ TASKS = [
             "Third: defensive third / middle third / attacking third."
         ),
         "label_field": "label_zone",
+        "max_new_tokens": 40,
     },
     {
         "name": "pressure",
@@ -57,6 +60,7 @@ TASKS = [
             "'There is low pressure around the ball.'"
         ),
         "label_field": "label_pressure",
+        "max_new_tokens": 40,
     },
 ]
 
