@@ -131,6 +131,12 @@ def main():
         default=0,
         help="Max number of games to use (0 = all)",
     )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=0,
+        help="Cap total samples (0=all). Useful for smoke tests.",
+    )
 
     args = parser.parse_args()
 
@@ -144,6 +150,8 @@ def main():
     )
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
+    if args.max_samples > 0:
+        indices = indices[:args.max_samples]
     n_test = max(1, int(len(indices) * args.test_ratio))
     n_val  = max(1, int(len(indices) * args.test_ratio))
     test_indices  = indices[:n_test]

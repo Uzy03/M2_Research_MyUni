@@ -139,6 +139,8 @@ def main():
     parser.add_argument("--device",        type=str,   default="cuda")
     parser.add_argument("--seed",          type=int,   default=42)
     parser.add_argument("--max_games",     type=int,   default=0)
+    parser.add_argument("--max_samples",   type=int,   default=0,
+                        help="Cap total samples (0=all). Useful for smoke tests.")
     parser.add_argument("--open_lora",     action="store_true",
                         help="Enable LoRA to partially unfreeze LLM")
     args = parser.parse_args()
@@ -150,6 +152,8 @@ def main():
     full_dataset = MultiTaskDataset(args.json_path, args.context_len, max_games=args.max_games)
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
+    if args.max_samples > 0:
+        indices = indices[:args.max_samples]
     n_test = max(1, int(len(indices) * args.test_ratio))
     n_val  = max(1, int(len(indices) * args.test_ratio))
     test_indices  = indices[:n_test]

@@ -1,7 +1,8 @@
 SHELL      := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 
-IMAGE      := unisoccer
+IMAGE          := unisoccer
+CONTAINER_NAME := unisoccer_server
 REMOTE     := ujihara@solar.arch.cs.kumamoto-u.ac.jp
 REMOTE_PORT := 2222
 REMOTE_DIR := /user/arch/ujihara/M2_Research_MyUni
@@ -83,7 +84,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -v $(CURDIR):/workspace \
               -v $(CURDIR)/hf_cache:/root/.cache/huggingface
 
-.PHONY: build run preprocess inference inference_local inference_commentary inference_instruction extract_clips \
+.PHONY: build start stop exec run preprocess inference inference_local inference_commentary inference_instruction extract_clips \
         download_tracking_captions download_all_tracking \
         preprocess_sn_tracking preprocess_all_tracking _preprocess_all_tracking \
         verify_sn_tracking train_tracking inference_tracking \
@@ -93,17 +94,34 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
         train_action_alignment inference_soccer_qa run_pipeline \
-        check smoke_phase2 clean
+        check smoke smoke_phase2 clean
 
 build:
 	docker build --force-rm -t $(IMAGE) .
+
+start:
+	docker run -d --name $(CONTAINER_NAME) \
+	    --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
+	    -e CUDA_VISIBLE_DEVICES=$(GPU) \
+	    --shm-size=8g \
+	    -v $(CURDIR):/workspace \
+	    -v $(CURDIR)/hf_cache:/root/.cache/huggingface \
+	    $(IMAGE)
+	@echo "Container started: $(CONTAINER_NAME)"
+	@echo "Enter with: make exec"
+
+stop:
+	docker stop $(CONTAINER_NAME) && docker rm $(CONTAINER_NAME)
+
+exec:
+	docker exec -it $(CONTAINER_NAME) bash
 
 run:
 	docker run -it --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
 	    --shm-size=8g \
 	    -v $(CURDIR):/workspace \
 	    -v $(CURDIR)/hf_cache:/root/.cache/huggingface \
-	    $(IMAGE)
+	    $(IMAGE) bash
 
 preprocess:
 	python SoccerNet_script/create_clip_dataset.py \
@@ -436,6 +454,49 @@ check:
 	python tracking/tests/test_phase2.py
 	@echo "All checks passed!"
 
+smoke:
+	$(eval SMOKE_TS := $(shell date +%Y%m%d%H%M)_smoke)
+	$(eval SMOKE_DIR := checkpoints/$(SMOKE_TS))
+	$(eval SMOKE_P1  := $(SMOKE_DIR)/phase1)
+	$(eval SMOKE_P2  := $(SMOKE_DIR)/phase2)
+	$(eval SMOKE_P3  := $(SMOKE_DIR)/phase3)
+	mkdir -p $(SMOKE_P1) $(SMOKE_P2) $(SMOKE_P3)
+	@echo "=== smoke: Phase 1 ==="
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory_regression.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path "" \
+	    --out_ckpt $(SMOKE_P1)/trajectory_regression.pth \
+	    --context_len $(SD_CONTEXT) \
+	    --K $(SD_K) --step $(SD_STEP) \
+	    --batch_size 2 --epochs 1 \
+	    --max_samples 5 \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(SMOKE_P1)/smoke.log
+	@echo "=== smoke: Phase 2 ==="
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(SMOKE_P1)/trajectory_regression.pth \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(SMOKE_P2)/action_alignment.pth \
+	    --context_len $(SD_CONTEXT) \
+	    --batch_size 2 --epochs 1 \
+	    --max_samples 5 --eval_interval 1 \
+	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(SMOKE_P2)/smoke.log
+	@echo "=== smoke: Phase 3 ==="
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(SMOKE_P2)/action_alignment.pth \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --config $(QA_CONFIG) \
+	    --out_csv $(SMOKE_P3)/smoke_results.csv \
+	    --context_len $(SD_CONTEXT) \
+	    --max_samples 5 \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(SMOKE_P3)/smoke.log
+	@echo "=== smoke done: $(SMOKE_DIR) ==="
+
 smoke_phase2:
 	mkdir -p $(PHASE2_DIR)
 	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
@@ -446,7 +507,7 @@ smoke_phase2:
 	    --context_len $(SD_CONTEXT) \
 	    --batch_size 2 \
 	    --epochs 1 \
-	    --max_games 1 \
+	    --max_samples 5 \
 	    --eval_interval 1 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --device $(DEVICE) \

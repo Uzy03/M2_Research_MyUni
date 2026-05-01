@@ -55,4 +55,4 @@ COPY . /workspace/
 
 ENV PYTHONPATH=/workspace
 
-CMD ["/bin/bash"]
+CMD ["sleep", "infinity"]
