@@ -144,6 +144,7 @@ class matchvoice_model_all_blocks(nn.Module):
         self.instruction = ''
         self.use_logits_filter = True
         self._max_new_tokens = 128
+        self._repetition_penalty = 1.0
 
     @classmethod
     def init_video_Qformer(cls, num_query_token, vision_width, num_hidden_layers =2):
@@ -277,7 +278,7 @@ class matchvoice_model_all_blocks(nn.Module):
             do_sample=True,
             min_length=5,
             top_p=0.9,
-            repetition_penalty=1.0,
+            repetition_penalty=self._repetition_penalty,
             length_penalty=1,
             temperature=1.0,
         )

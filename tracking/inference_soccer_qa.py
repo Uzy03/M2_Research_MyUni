@@ -54,6 +54,8 @@ def parse_args():
     parser.add_argument("--max_games",   type=int, default=0)
     parser.add_argument("--device",      default="cuda")
     parser.add_argument("--seed",        type=int, default=42)
+    parser.add_argument('--repetition_penalty', type=float, default=1.0)
+    parser.add_argument('--max_new_tokens',     type=int,   default=128)
     return parser.parse_args()
 
 
@@ -126,6 +128,8 @@ def main():
     print(f"Loaded {len(clips)} clips, running {len(TASKS)} tasks each")
 
     model = load_model(args.ckpt_path, args.llm_ckpt, args.device)
+    model._repetition_penalty = args.repetition_penalty
+    model._max_new_tokens     = args.max_new_tokens
     print(f"Model ready on {args.device}")
 
     task_scores = {t['name']: [] for t in TASKS}

@@ -50,6 +50,8 @@ QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
 OPEN_LORA       ?= 1
 EVAL_INTERVAL   ?= 5
+REP_PENALTY     ?= 1.3
+MAX_NEW_TOKENS  ?= 40
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -433,6 +435,8 @@ inference_soccer_qa:
 	    --out_csv $(PHASE3_DIR)/results.csv \
 	    --context_len $(SD_CONTEXT) \
 	    --max_games $(MAX_GAMES) \
+	    --repetition_penalty $(REP_PENALTY) \
+	    --max_new_tokens $(MAX_NEW_TOKENS) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE3_DIR)/inference.log
 
@@ -489,6 +493,8 @@ smoke:
 	    --out_csv $(SMOKE_P3)/smoke_results.csv \
 	    --context_len $(SD_CONTEXT) \
 	    --max_samples 50 \
+	    --repetition_penalty $(REP_PENALTY) \
+	    --max_new_tokens $(MAX_NEW_TOKENS) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P3)/smoke.log
 	@echo "=== smoke done: $(SMOKE_DIR) ==="

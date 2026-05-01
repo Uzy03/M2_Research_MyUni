@@ -62,7 +62,7 @@ def main():
     parser.add_argument(
         "--ckpt_path",
         type=str,
-        default="checkpoints/downstream_commentary_all_open.pth",
+        default="",
         help="Pre-trained checkpoint for weight initialization",
     )
     parser.add_argument(
