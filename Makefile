@@ -390,7 +390,6 @@ train_trajectory_regression:
 	mkdir -p $(PHASE1_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory_regression.py \
 	    --json_path $(SD_JSON) \
-	    --ckpt_path $(COMMENTARY_CKPT) \
 	    --out_ckpt $(REGRESSION_CKPT) \
 	    --context_len $(SD_CONTEXT) \
 	    --K $(SD_K) \
