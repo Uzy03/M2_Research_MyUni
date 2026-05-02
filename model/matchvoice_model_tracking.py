@@ -104,15 +104,27 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         
         frame_hidden_state = einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h', b=batch_size, t=time_length)
         frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(frame_hidden_state)
-        video_query_tokens = self.video_query_tokens.expand(frame_hidden_state.shape[0], -1, -1).to(frame_hidden_state.device)
-        
-        video_query_output = self.video_Qformer.bert(
-            query_embeds=video_query_tokens,
-            encoder_hidden_states=frame_hidden_state,
-            encoder_attention_mask=frame_atts,
-            return_dict=True,
-        )
-        video_hidden = video_query_output.last_hidden_state
+        if self.qformer_heads > 1:
+            head_outputs = []
+            for h in range(self.qformer_heads):
+                q_h = self.video_query_tokens[h].unsqueeze(0).expand(batch_size, -1, -1).to(frame_hidden_state.device)
+                out_h = self.video_Qformer.bert(
+                    query_embeds=q_h,
+                    encoder_hidden_states=frame_hidden_state,
+                    encoder_attention_mask=frame_atts,
+                    return_dict=True,
+                )
+                head_outputs.append(out_h.last_hidden_state)
+            video_hidden = torch.cat(head_outputs, dim=1)
+        else:
+            video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(frame_hidden_state.device)
+            video_query_output = self.video_Qformer.bert(
+                query_embeds=video_query_tokens,
+                encoder_hidden_states=frame_hidden_state,
+                encoder_attention_mask=frame_atts,
+                return_dict=True,
+            )
+            video_hidden = video_query_output.last_hidden_state
         
         inputs_llama = self.llama_proj(video_hidden)
         if self.inference:
@@ -122,7 +134,8 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
             temp_res_text = self.generate_text(inputs_llama)
             return temp_res_text, caption_text, video_path
         
-        visual_label = torch.full((batch_size, self.num_video_query_token), -100, dtype=targets.dtype).to(inputs_llama.device)
+        n_vis_tokens = inputs_llama.shape[1]
+        visual_label = torch.full((batch_size, n_vis_tokens), -100, dtype=targets.dtype).to(inputs_llama.device)
         concat_targets = torch.cat((visual_label, targets), dim=1).to(inputs_llama.device)
         temp_input_ids = inputs_ids.clone().to(inputs_llama.device)
         if self.open_llm_decoder == True:
@@ -130,7 +143,7 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         else:
             targets_embeds = self.llama_model.model.embed_tokens(temp_input_ids)
         embedding_cat = torch.cat((inputs_llama, targets_embeds), dim=1)
-        mask_prefix = torch.ones(batch_size, self.num_video_query_token, dtype=atts_llama.dtype).to(inputs_llama.device)
+        mask_prefix = torch.ones(batch_size, n_vis_tokens, dtype=atts_llama.dtype).to(inputs_llama.device)
         mask = torch.concat((mask_prefix, atts_llama), dim=1).to(inputs_llama.device)
         
         import io
