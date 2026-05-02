@@ -56,6 +56,10 @@ def parse_args():
     parser.add_argument("--seed",        type=int, default=42)
     parser.add_argument('--repetition_penalty', type=float, default=1.0)
     parser.add_argument('--max_new_tokens',     type=int,   default=128)
+    parser.add_argument('--use_ans_token', action='store_true',
+                        help="Insert <ANS> token between instruction and answer")
+    parser.add_argument('--qformer_heads', type=int, default=1,
+                        help="Multi-head Q-Former heads (1=baseline)")
     return parser.parse_args()
 
 
@@ -77,7 +81,7 @@ def load_clips(json_path, max_samples, seed, max_games=0):
     return clips, Path(json_path).parent
 
 
-def load_model(ckpt_path, llm_ckpt, device):
+def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1):
     model = matchvoice_model_tracking(
         load_checkpoint=False,
         num_features=768,
@@ -85,6 +89,8 @@ def load_model(ckpt_path, llm_ckpt, device):
         llm_ckpt=llm_ckpt,
         tokenizer_ckpt=llm_ckpt,
         open_llm_decoder=False,
+        use_ans_token=use_ans_token,
+        qformer_heads=qformer_heads,
         num_players=23,
         in_features=5,
         d_model=256,
@@ -127,7 +133,9 @@ def main():
     clips, base_dir = load_clips(args.json_path, args.max_samples, args.seed, args.max_games)
     print(f"Loaded {len(clips)} clips, running {len(TASKS)} tasks each")
 
-    model = load_model(args.ckpt_path, args.llm_ckpt, args.device)
+    model = load_model(args.ckpt_path, args.llm_ckpt, args.device,
+                       use_ans_token=args.use_ans_token,
+                       qformer_heads=args.qformer_heads)
     model._repetition_penalty = args.repetition_penalty
     model._max_new_tokens     = args.max_new_tokens
     print(f"Model ready on {args.device}")

@@ -37,6 +37,32 @@
 
 ---
 
+## Phase 2: Multi-task Action Alignment（追加実験）
+
+| Experiment | Games | LoRA | lora_rank | f1_action↑ | rouge_possession↑ | rouge_zone↑ | rouge_pressure↑ | Notes |
+|---|---|---|---|---|---|---|---|---|
+| LoRA拡張(k,o_proj) + rank32 | 10 | ON | 32 | - | - | - | - | Phase2単体未計測 |
+
+---
+
+## Phase 3: Zero-shot QA Inference（追加実験）
+
+| Experiment | Games | rep_penalty | max_new_tokens | f1_action↑ | rouge_possession↑ | rouge_zone↑ | rouge_pressure↑ | Notes |
+|---|---|---|---|---|---|---|---|---|
+| self-attention fusion (InstructionTrackingFusion, num_layers=2) | 10 | 1.3 | action=80, others=40 | ≈0.22 (偽) | 高い (偽) | 高い (偽) | 高い (偽) | **失敗**: 全タスクで instruction 全文を出力。スコアは偶発的一致による見かけ値 |
+
+**失敗の詳細**（InstructionTrackingFusion: bidirectional TransformerEncoder で tracking と instruction を融合）:
+- action: `" List the soccer actions... Use only: block, clearance, ..."` を繰り返す（f1≈0.22 だが正解ではない）
+- possession / zone / pressure: 全サンプルで同一の instruction テキストを出力（完全固定出力）
+- ROUGE が高く見える理由: instruction テンプレートが答えの単語（left/right/high 等）を含むため偶発的に一致
+
+**根本原因**（instruction collapse）:
+fused tracking tokens が instruction 情報を含むため、LLM は `[fused_tracking | BOS | instruction]` を受け取ると「instruction の次には instruction が来る」と学習してしまい、answer ではなく instruction 全文を生成する。self-attention による双方向融合が tracking と instruction を不可分に混合したことが原因。
+
+**教訓**: tracking 特徴量と instruction を融合する場合、LLM 入力から instruction を除去するか、融合前後で情報が完全に分離されていることを保証する必要がある。
+
+---
+
 ## 観察メモ
 
 ### baseline の生成問題

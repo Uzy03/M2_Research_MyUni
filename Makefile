@@ -53,6 +53,8 @@ EVAL_INTERVAL   ?= 5
 REP_PENALTY     ?= 1.3
 MAX_NEW_TOKENS  ?= 40
 LORA_RANK       ?= 32
+USE_ANS_TOKEN   ?= 0
+QFORMER_HEADS   ?= 1
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -425,6 +427,8 @@ train_action_alignment:
 	    --max_games $(MAX_GAMES) \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --lora_rank $(LORA_RANK) \
+	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
+	    --qformer_heads $(QFORMER_HEADS) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
@@ -439,6 +443,8 @@ inference_soccer_qa:
 	    --max_games $(MAX_GAMES) \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
+	    --qformer_heads $(QFORMER_HEADS) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE3_DIR)/inference.log
 
@@ -486,6 +492,8 @@ smoke:
 	    --max_samples 50 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --lora_rank $(LORA_RANK) \
+	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
+	    --qformer_heads $(QFORMER_HEADS) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P2)/smoke.log
 	@echo "=== smoke: Phase 3 ==="
@@ -498,6 +506,8 @@ smoke:
 	    --max_samples 50 \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
+	    --qformer_heads $(QFORMER_HEADS) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P3)/smoke.log
 	@echo "=== smoke done: $(SMOKE_DIR) ==="
@@ -515,6 +525,8 @@ smoke_phase2:
 	    --max_samples 50 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
 	    --lora_rank $(LORA_RANK) \
+	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
+	    --qformer_heads $(QFORMER_HEADS) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/smoke.log
 

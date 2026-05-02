@@ -17,19 +17,23 @@ from tracking.dataset.multitask_dataset import MultiTaskDataset, TASKS, ACTION_V
 from model.matchvoice_model_tracking import matchvoice_model_tracking
 
 
-def make_collate_fn(tokenizer, max_length):
+def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=None):
     def collate_fn(batch):
         feats, masks, instructions, target_texts, task_names, seq_ids = zip(*batch)
         tracking = torch.stack(feats)
         mask_tensor = torch.stack(masks)
 
-        input_ids_list, labels_list, attn_list, instruction_ids_list = [], [], [], []
+        input_ids_list, labels_list, attn_list = [], [], []
         bos_id = tokenizer.bos_token_id
         for instruction, target_text in zip(instructions, target_texts):
             inst_ids = tokenizer(instruction, add_special_tokens=False).input_ids
             ans_ids  = tokenizer(target_text + tokenizer.eos_token, add_special_tokens=False).input_ids
-            full_ids = ([bos_id] + inst_ids + ans_ids)[:max_length]
-            lbl      = ([-100]   + [-100] * len(inst_ids) + ans_ids)[:max_length]
+            if use_ans_token and ans_token_id is not None:
+                full_ids = ([bos_id] + inst_ids + [ans_token_id] + ans_ids)[:max_length]
+                lbl      = ([-100]   + [-100] * len(inst_ids) + [-100] + ans_ids)[:max_length]
+            else:
+                full_ids = ([bos_id] + inst_ids + ans_ids)[:max_length]
+                lbl      = ([-100]   + [-100] * len(inst_ids) + ans_ids)[:max_length]
             pad_len  = max_length - len(full_ids)
             attn     = [1] * len(full_ids) + [0] * pad_len
             full_ids = full_ids + [tokenizer.pad_token_id] * pad_len
@@ -37,26 +41,17 @@ def make_collate_fn(tokenizer, max_length):
             input_ids_list.append(full_ids)
             labels_list.append(lbl)
             attn_list.append(attn)
-            instruction_ids_list.append(inst_ids)
-
-        # instruction_ids をパディング
-        max_inst_len = max(len(ids) for ids in instruction_ids_list)
-        inst_ids_padded = [
-            ids + [tokenizer.pad_token_id] * (max_inst_len - len(ids))
-            for ids in instruction_ids_list
-        ]
 
         return {
-            "tracking":        tracking,
-            "mask":            mask_tensor,
-            "input_ids":       torch.tensor(input_ids_list, dtype=torch.long),
-            "attention_mask":  torch.tensor(attn_list, dtype=torch.long),
-            "labels":          torch.tensor(labels_list, dtype=torch.long),
-            "caption_text":    list(target_texts),
-            "video_path":      list(seq_ids),
-            "instruction":     list(instructions),
-            "task_name":       list(task_names),
-            "instruction_ids": torch.tensor(inst_ids_padded, dtype=torch.long),
+            "tracking":       tracking,
+            "mask":           mask_tensor,
+            "input_ids":      torch.tensor(input_ids_list, dtype=torch.long),
+            "attention_mask": torch.tensor(attn_list, dtype=torch.long),
+            "labels":         torch.tensor(labels_list, dtype=torch.long),
+            "caption_text":   list(target_texts),
+            "video_path":     list(seq_ids),
+            "instruction":    list(instructions),
+            "task_name":      list(task_names),
         }
     return collate_fn
 
@@ -152,6 +147,10 @@ def main():
                         help="Enable LoRA to partially unfreeze LLM")
     parser.add_argument("--lora_rank",     type=int,   default=16,
                         help="LoRA rank (default: 16)")
+    parser.add_argument("--use_ans_token", action="store_true",
+                        help="Insert <ANS> token between instruction and answer")
+    parser.add_argument("--qformer_heads", type=int, default=1,
+                        help="Multi-head Q-Former heads (1=baseline, 4 or 8 for ablation)")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -190,6 +189,8 @@ def main():
         tokenizer_ckpt=args.llm_ckpt,
         open_llm_decoder=args.open_lora,
         llm_lora_rank=args.lora_rank,
+        use_ans_token=args.use_ans_token,
+        qformer_heads=args.qformer_heads,
         num_players=23,
         in_features=5,
         d_model=256,
@@ -232,7 +233,11 @@ def main():
     print("=" * 60)
     if model.tokenizer.pad_token is None:
         model.tokenizer.pad_token = model.tokenizer.eos_token
-    collate_fn = make_collate_fn(model.tokenizer, args.max_length)
+    collate_fn = make_collate_fn(
+        model.tokenizer, args.max_length,
+        use_ans_token=args.use_ans_token,
+        ans_token_id=model.ans_token_id,
+    )
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                               collate_fn=collate_fn, num_workers=4, pin_memory=True)
     val_loader   = DataLoader(val_dataset,   batch_size=args.batch_size, shuffle=False,

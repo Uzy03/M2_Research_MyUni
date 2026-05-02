@@ -24,22 +24,6 @@ def process_output_tokens(predict_model, tokens):
         output_texts.append(output_text)
     return output_texts
 
-class InstructionTrackingFusion(nn.Module):
-    def __init__(self, hidden_size, num_heads=8, num_layers=2):
-        super().__init__()
-        layer = nn.TransformerEncoderLayer(
-            d_model=hidden_size, nhead=num_heads, batch_first=True
-        )
-        self.encoder = nn.TransformerEncoder(
-            layer, num_layers=num_layers, enable_nested_tensor=False
-        )
-
-    def forward(self, tracking, instruction):
-        n_track = tracking.size(1)
-        x = torch.cat([tracking, instruction], dim=1)
-        fused = self.encoder(x.float()).to(tracking.dtype)
-        return fused[:, :n_track, :]
-
 class RestrictTokenGenerationLogitsProcessor(LogitsProcessor):
     def __init__(self, allowed_token_id_list: List[int]):
         super().__init__()
@@ -74,6 +58,8 @@ class matchvoice_model_all_blocks(nn.Module):
                  open_llm_decoder = False,
                  llm_lora_rank = 16,
                  llm_lora_dropout = 0.05,
+                 use_ans_token = False,
+                 qformer_heads = 1,
                  **kwargs,
                  ):
         super().__init__()
@@ -82,6 +68,7 @@ class matchvoice_model_all_blocks(nn.Module):
         # self.device = device
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_ckpt)
         self.tokenizer.add_tokens(["[PLAYER]","[TEAM]","[COACH]","[REFEREE]","([TEAM])"], special_tokens=True)
+        self.tokenizer.add_tokens(["<ANS>"], special_tokens=True)
         self.open_visual_encoder = open_visual_encoder
         if self.open_visual_encoder:
             print("======== Visual encoder is opened!")
@@ -89,6 +76,8 @@ class matchvoice_model_all_blocks(nn.Module):
         # print("AA", open_llm_decoder)
         self.llama_model = AutoModelForCausalLM.from_pretrained(llm_ckpt, torch_dtype=torch.float16)
         self.llama_model.resize_token_embeddings(len(self.tokenizer))
+        self.use_ans_token = use_ans_token
+        self.ans_token_id = self.tokenizer.convert_tokens_to_ids("<ANS>")
         if self.open_llm_decoder == True:
             lora_config = LoraConfig(
                 r=llm_lora_rank, 
@@ -125,12 +114,19 @@ class matchvoice_model_all_blocks(nn.Module):
             layer.output = None
             layer.intermediate = None
 
+        self.qformer_heads = qformer_heads
+        if qformer_heads > 1:
+            assert num_video_query_token % qformer_heads == 0, \
+                f"num_video_query_token ({num_video_query_token}) must be divisible by qformer_heads ({qformer_heads})"
+            tokens_per_head = num_video_query_token // qformer_heads
+            qf_hidden = self.video_Qformer.config.hidden_size
+            self.video_query_tokens = nn.Parameter(
+                torch.zeros(qformer_heads, tokens_per_head, qf_hidden).normal_(0, 0.02)
+            )
+
         # llama projection
         self.llama_proj = nn.Linear(
             self.video_Qformer.config.hidden_size, self.llama_model.config.hidden_size
-        )
-        self.fusion = InstructionTrackingFusion(
-            hidden_size=self.llama_model.config.hidden_size
         )
         # video frame positional embedding
         self.video_frame_position_embedding = nn.Embedding(max_frame_pos, num_features)
@@ -225,15 +221,27 @@ class matchvoice_model_all_blocks(nn.Module):
 
         frame_hidden_state =  einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h',b=batch_size,t=time_length)
         frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(frame_hidden_state)
-        video_query_tokens = self.video_query_tokens.expand(frame_hidden_state.shape[0], -1, -1).to(frame_hidden_state.device)
-
-        video_query_output = self.video_Qformer.bert(
-            query_embeds=video_query_tokens,
-            encoder_hidden_states=frame_hidden_state,
-            encoder_attention_mask=frame_atts,
-            return_dict=True,
-        )
-        video_hidden = video_query_output.last_hidden_state
+        if self.qformer_heads > 1:
+            head_outputs = []
+            for h in range(self.qformer_heads):
+                q_h = self.video_query_tokens[h].unsqueeze(0).expand(batch_size, -1, -1).to(frame_hidden_state.device)
+                out_h = self.video_Qformer.bert(
+                    query_embeds=q_h,
+                    encoder_hidden_states=frame_hidden_state,
+                    encoder_attention_mask=frame_atts,
+                    return_dict=True,
+                )
+                head_outputs.append(out_h.last_hidden_state)
+            video_hidden = torch.cat(head_outputs, dim=1)
+        else:
+            video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(frame_hidden_state.device)
+            video_query_output = self.video_Qformer.bert(
+                query_embeds=video_query_tokens,
+                encoder_hidden_states=frame_hidden_state,
+                encoder_attention_mask=frame_atts,
+                return_dict=True,
+            )
+            video_hidden = video_query_output.last_hidden_state
 
         inputs_llama = self.llama_proj(video_hidden)
         if self.inference:
@@ -250,14 +258,6 @@ class matchvoice_model_all_blocks(nn.Module):
             targets_embeds = self.llama_model.base_model.model.model.embed_tokens(temp_input_ids)
         else:
             targets_embeds = self.llama_model.model.embed_tokens(temp_input_ids)
-        if 'instruction_ids' in samples and samples['instruction_ids'] is not None:
-            inst_ids_f = samples['instruction_ids'].to(inputs_llama.device)
-            if self.open_llm_decoder:
-                emb_fn = self.llama_model.base_model.model.model.embed_tokens
-            else:
-                emb_fn = self.llama_model.model.embed_tokens
-            inst_emb_f = emb_fn(inst_ids_f)
-            inputs_llama = self.fusion(inputs_llama, inst_emb_f)
         embedding_cat = torch.cat((inputs_llama, targets_embeds), dim=1)
         mask_prefix = torch.ones(batch_size, self.num_video_query_token, dtype=atts_llama.dtype).to(inputs_llama.device)
         mask = torch.concat((mask_prefix, atts_llama), dim=1).to(inputs_llama.device)
@@ -290,8 +290,13 @@ class matchvoice_model_all_blocks(nn.Module):
                 self.instruction, add_special_tokens=False, return_tensors='pt'
             ).input_ids.to(inputs_llama.device)
             inst_embeds = embed_fn(inst_ids).expand(B, -1, -1)
-            inputs_llama = self.fusion(inputs_llama, inst_embeds)
-            parts = [inputs_llama, bos.expand(B, -1, -1), inst_embeds]
+            parts.append(inst_embeds)
+
+        if self.use_ans_token:
+            ans_tok_embed = embed_fn(
+                torch.tensor([[self.ans_token_id]], device=inputs_llama.device)
+            ).expand(B, -1, -1)
+            parts.append(ans_tok_embed)
 
         combined = torch.cat(parts, dim=1).to(dtype=torch.float16)
         attn_mask = torch.ones(combined.shape[:2], dtype=torch.long, device=combined.device)
