@@ -23,7 +23,7 @@ def make_collate_fn(tokenizer, max_length):
         tracking = torch.stack(feats)
         mask_tensor = torch.stack(masks)
 
-        input_ids_list, labels_list, attn_list = [], [], []
+        input_ids_list, labels_list, attn_list, instruction_ids_list = [], [], [], []
         bos_id = tokenizer.bos_token_id
         for instruction, target_text in zip(instructions, target_texts):
             inst_ids = tokenizer(instruction, add_special_tokens=False).input_ids
@@ -37,17 +37,26 @@ def make_collate_fn(tokenizer, max_length):
             input_ids_list.append(full_ids)
             labels_list.append(lbl)
             attn_list.append(attn)
+            instruction_ids_list.append(inst_ids)
+
+        # instruction_ids をパディング
+        max_inst_len = max(len(ids) for ids in instruction_ids_list)
+        inst_ids_padded = [
+            ids + [tokenizer.pad_token_id] * (max_inst_len - len(ids))
+            for ids in instruction_ids_list
+        ]
 
         return {
-            "tracking":       tracking,
-            "mask":           mask_tensor,
-            "input_ids":      torch.tensor(input_ids_list, dtype=torch.long),
-            "attention_mask": torch.tensor(attn_list, dtype=torch.long),
-            "labels":         torch.tensor(labels_list, dtype=torch.long),
-            "caption_text":   list(target_texts),
-            "video_path":     list(seq_ids),
-            "instruction":    list(instructions),
-            "task_name":      list(task_names),
+            "tracking":        tracking,
+            "mask":            mask_tensor,
+            "input_ids":       torch.tensor(input_ids_list, dtype=torch.long),
+            "attention_mask":  torch.tensor(attn_list, dtype=torch.long),
+            "labels":          torch.tensor(labels_list, dtype=torch.long),
+            "caption_text":    list(target_texts),
+            "video_path":      list(seq_ids),
+            "instruction":     list(instructions),
+            "task_name":       list(task_names),
+            "instruction_ids": torch.tensor(inst_ids_padded, dtype=torch.long),
         }
     return collate_fn
 
@@ -141,6 +150,8 @@ def main():
                         help="Cap total samples (0=all). Useful for smoke tests.")
     parser.add_argument("--open_lora",     action="store_true",
                         help="Enable LoRA to partially unfreeze LLM")
+    parser.add_argument("--lora_rank",     type=int,   default=16,
+                        help="LoRA rank (default: 16)")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -178,6 +189,7 @@ def main():
         llm_ckpt=args.llm_ckpt,
         tokenizer_ckpt=args.llm_ckpt,
         open_llm_decoder=args.open_lora,
+        llm_lora_rank=args.lora_rank,
         num_players=23,
         in_features=5,
         d_model=256,

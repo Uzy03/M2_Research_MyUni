@@ -52,6 +52,7 @@ OPEN_LORA       ?= 1
 EVAL_INTERVAL   ?= 5
 REP_PENALTY     ?= 1.3
 MAX_NEW_TOKENS  ?= 40
+LORA_RANK       ?= 32
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -423,6 +424,7 @@ train_action_alignment:
 	    --epochs $(EPOCHS_PHASE2) \
 	    --max_games $(MAX_GAMES) \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
+	    --lora_rank $(LORA_RANK) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
@@ -483,6 +485,7 @@ smoke:
 	    --batch_size 2 --epochs 1 \
 	    --max_samples 50 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
+	    --lora_rank $(LORA_RANK) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P2)/smoke.log
 	@echo "=== smoke: Phase 3 ==="
@@ -511,6 +514,7 @@ smoke_phase2:
 	    --epochs 1 \
 	    --max_samples 50 \
 	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
+	    --lora_rank $(LORA_RANK) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/smoke.log
 
