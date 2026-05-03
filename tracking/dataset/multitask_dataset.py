@@ -136,5 +136,5 @@ class MultiTaskDataset(Dataset):
 
         # Fallback: self._tasks[0] (allowed_tasks の先頭 = 通常 action)
         fallback_task = self._tasks[0]
-        answer = entry.get(fallback_task['label_field'], '')
+        answer = entry.get(fallback_task['label_field']) or ''
         return feat, msk, fallback_task[instr_key], answer, fallback_task['name'], seq_id

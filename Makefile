@@ -46,6 +46,8 @@ PHASE2_DIR  = $(RUN_DIR)/phase2
 PHASE3_DIR  = $(RUN_DIR)/phase3
 REGRESSION_CKPT  = $(PHASE1_DIR)/trajectory_regression.pth
 ACTION_CKPT      = $(PHASE2_DIR)/action_alignment.pth
+SHARED_PHASE1_DIR  = checkpoints/phase1
+SHARED_PHASE1_CKPT = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
 QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
 OPEN_LORA       ?= 1
@@ -101,7 +103,9 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
-        train_action_alignment run_curriculum inference_soccer_qa run_pipeline \
+        train_action_alignment run_curriculum inference_soccer_qa \
+        run_pipeline run_pipeline_curriculum \
+        train_phase1 run_from_phase2 run_curriculum_from_phase2 \
         check smoke smoke_phase2 clean
 
 build:
@@ -408,6 +412,11 @@ train_trajectory_regression:
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE1_DIR)/train.log
 
+train_phase1:
+	$(MAKE) train_trajectory_regression \
+	    PHASE1_DIR=$(SHARED_PHASE1_DIR) \
+	    REGRESSION_CKPT=$(SHARED_PHASE1_CKPT)
+
 inference_trajectory_regression:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_trajectory_regression.py \
 	    --json_path $(PHASE1_DIR)/trajectory_regression_test_split.json \
@@ -479,6 +488,26 @@ run_pipeline:
 	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
 	$(MAKE) train_trajectory_regression RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
 	$(MAKE) train_action_alignment RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+
+run_pipeline_curriculum:
+	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
+	$(MAKE) train_trajectory_regression RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+	$(MAKE) run_curriculum RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+
+run_from_phase2:
+	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
+	$(MAKE) train_action_alignment \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
+	    REGRESSION_CKPT=$(SHARED_PHASE1_CKPT)
+	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+
+run_curriculum_from_phase2:
+	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
+	$(MAKE) run_curriculum \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
+	    REGRESSION_CKPT=$(SHARED_PHASE1_CKPT)
 	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
 
 check:
