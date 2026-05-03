@@ -16,6 +16,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tracking.dataset.multitask_dataset import MultiTaskDataset, TASKS, ACTION_VOCAB
 from model.matchvoice_model_tracking import matchvoice_model_tracking
 
+STAGE_TASKS = [
+    ['action'],
+    ['action', 'possession'],
+    ['action', 'possession', 'zone'],
+    ['action', 'possession', 'zone', 'pressure'],
+]
+
 
 def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=None,
                     use_chat_template=False, asst_header_ids=None):
@@ -127,6 +134,104 @@ def evaluate_metrics(model, dataset, device, max_eval=200, seed=0):
     }
 
 
+def run_curriculum_training(args, model, full_dataset_all,
+                            train_indices, val_indices, test_indices,
+                            stage_epochs, collate_fn):
+    log_csv = Path(args.out_ckpt).with_suffix('.curriculum_log.csv')
+    Path(args.out_ckpt).parent.mkdir(parents=True, exist_ok=True)
+    with open(log_csv, "w", newline="") as f:
+        csv.writer(f).writerow(["stage", "epoch", "train_loss", "val_loss"])
+
+    for stage_idx, task_names in enumerate(STAGE_TASKS):
+        stage_num = stage_idx + 1
+        n_epochs  = stage_epochs[stage_idx]
+        print("\n" + "=" * 60)
+        print(f"Curriculum Stage {stage_num}/4: tasks={task_names}  epochs={n_epochs}")
+        print("=" * 60)
+
+        stage_dataset = MultiTaskDataset(
+            args.json_path, context_len=args.context_len, max_games=args.max_games,
+            use_short_instruction=args.short_instruction, allowed_tasks=task_names,
+        )
+        stage_train = Subset(stage_dataset, train_indices)
+        stage_val   = Subset(stage_dataset, val_indices)
+        train_loader = DataLoader(stage_train, batch_size=args.batch_size, shuffle=True,
+                                  collate_fn=collate_fn, num_workers=4, pin_memory=True)
+        val_loader   = DataLoader(stage_val,   batch_size=args.batch_size, shuffle=False,
+                                  collate_fn=collate_fn, num_workers=4, pin_memory=True)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
+
+        if stage_num < 4:
+            stage_ckpt = Path(args.out_ckpt).parent / f"action_alignment_stage{stage_num}.pth"
+        else:
+            stage_ckpt = Path(args.out_ckpt)
+
+        best_val = float('inf')
+
+        for epoch in range(1, n_epochs + 1):
+            model.train()
+            total_train, n_train = 0.0, 0
+            for batch in train_loader:
+                batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v
+                         for k, v in batch.items()}
+                optimizer.zero_grad()
+                loss = model(batch, validating=False)
+                if torch.isnan(loss):
+                    continue
+                loss.backward()
+                optimizer.step()
+                total_train += loss.item()
+                n_train += 1
+            avg_train = total_train / max(1, n_train)
+            scheduler.step()
+
+            model.eval()
+            total_val, n_val = 0.0, 0
+            with torch.no_grad():
+                for batch in val_loader:
+                    batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v
+                             for k, v in batch.items()}
+                    loss = model(batch, validating=False)
+                    if not torch.isnan(loss):
+                        total_val += loss.item()
+                        n_val += 1
+            avg_val = total_val / max(1, n_val)
+
+            mark = ""
+            if avg_val < best_val:
+                best_val = avg_val
+                save_state = {k: v for k, v in model.state_dict().items()
+                              if not k.startswith('llama_model.')}
+                torch.save({"state_dict": save_state}, stage_ckpt)
+                mark = " ← best"
+
+            print(f"  [Stage {stage_num}] Epoch {epoch}/{n_epochs}"
+                  f"  train={avg_train:.4f}  val={avg_val:.4f}{mark}")
+            with open(log_csv, "a", newline="") as f:
+                csv.writer(f).writerow([stage_num, epoch, f"{avg_train:.6f}", f"{avg_val:.6f}"])
+
+        print(f"Stage {stage_num} best val: {best_val:.4f}  Saved: {stage_ckpt}")
+
+        loaded = torch.load(stage_ckpt, map_location="cpu")
+        model.load_state_dict(loaded["state_dict"], strict=False)
+        model.to(args.device)
+        test_subset = Subset(full_dataset_all, test_indices)
+        test_r = evaluate_metrics(model, test_subset, args.device)
+        print(
+            f"[Stage {stage_num}] Test"
+            f"  f1_action={test_r['action']:.4f}"
+            f"  rouge_possession={test_r['possession']:.4f}"
+            f"  rouge_zone={test_r['zone']:.4f}"
+            f"  rouge_pressure={test_r['pressure']:.4f}"
+        )
+
+    print("\n" + "=" * 60)
+    print(f"カリキュラム学習完了！最終ckpt: {args.out_ckpt}")
+    print("=" * 60)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Phase 2: Multi-task action alignment with optional LoRA"
@@ -159,6 +264,8 @@ def main():
                         help="Use LLaMA-3 assistant header as answer boundary signal")
     parser.add_argument("--short_instruction", action="store_true",
                         help="Use shortened instruction texts to reduce token count")
+    parser.add_argument("--curriculum_stages", type=str, default=None,
+                        help="カリキュラム学習のエポック数（例: '5,5,5,5'）。省略時は joint training。")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -257,64 +364,90 @@ def main():
     print(f"Train: {len(train_loader)} batches  Val: {len(val_loader)} batches")
 
     print("\n" + "=" * 60)
-    print("Step 5: 訓練ループ")
-    print("=" * 60)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    log_csv = Path(args.out_ckpt).with_suffix('.train_log.csv')
-    with open(log_csv, "w", newline="") as f:
-        csv.writer(f).writerow(["epoch", "train_loss", "val_loss"])
+    if args.curriculum_stages is not None:
+        print("Step 5: カリキュラム訓練")
+        print("=" * 60)
+        stage_epochs = [int(x) for x in args.curriculum_stages.split(",")]
+        run_curriculum_training(
+            args, model,
+            full_dataset,
+            train_indices, val_indices, test_indices,
+            stage_epochs, collate_fn,
+        )
+    else:
+        print("Step 5: 訓練ループ")
+        print("=" * 60)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+        log_csv = Path(args.out_ckpt).with_suffix('.train_log.csv')
+        with open(log_csv, "w", newline="") as f:
+            csv.writer(f).writerow(["epoch", "train_loss", "val_loss"])
 
-    for epoch in range(1, args.epochs + 1):
-        # --- train ---
-        model.train()
-        total_train = 0.0
-        for batch in train_loader:
-            batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-            optimizer.zero_grad()
-            loss = model(batch, validating=False)
-            if torch.isnan(loss):
-                continue
-            loss.backward()
-            optimizer.step()
-            total_train += loss.item()
-        avg_train = total_train / len(train_loader)
+        best_val = float('inf')
+        Path(args.out_ckpt).parent.mkdir(parents=True, exist_ok=True)
 
-        # --- val loss ---
-        model.eval()
-        total_val = 0.0
-        n_val_batches = 0
-        with torch.no_grad():
-            for batch in val_loader:
+        for epoch in range(1, args.epochs + 1):
+            # --- train ---
+            model.train()
+            total_train = 0.0
+            for batch in train_loader:
                 batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                optimizer.zero_grad()
                 loss = model(batch, validating=False)
-                if not torch.isnan(loss):
-                    total_val += loss.item()
-                    n_val_batches += 1
-        avg_val = total_val / max(1, n_val_batches)
+                if torch.isnan(loss):
+                    continue
+                loss.backward()
+                optimizer.step()
+                total_train += loss.item()
+            avg_train = total_train / len(train_loader)
+            scheduler.step()
 
-        print(f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}")
-        with open(log_csv, "a", newline="") as f:
-            csv.writer(f).writerow([epoch, f"{avg_train:.6f}", f"{avg_val:.6f}"])
+            # --- val loss ---
+            model.eval()
+            total_val = 0.0
+            n_val_batches = 0
+            with torch.no_grad():
+                for batch in val_loader:
+                    batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                    loss = model(batch, validating=False)
+                    if not torch.isnan(loss):
+                        total_val += loss.item()
+                        n_val_batches += 1
+            avg_val = total_val / max(1, n_val_batches)
 
-    print("\n" + "=" * 60)
-    print("Step 6: テスト評価")
-    print("=" * 60)
-    test_r = evaluate_metrics(model, test_dataset, args.device)
-    print(
-        f"Test  f1_action={test_r['action']:.4f}  rouge_possession={test_r['possession']:.4f}"
-        f"  rouge_zone={test_r['zone']:.4f}  rouge_pressure={test_r['pressure']:.4f}"
-    )
+            mark = ""
+            if avg_val < best_val:
+                best_val = avg_val
+                save_state = {k: v for k, v in model.state_dict().items() if not k.startswith('llama_model.')}
+                torch.save({"state_dict": save_state}, args.out_ckpt)
+                mark = " ← best"
 
-    print("\n" + "=" * 60)
-    print("Step 7: チェックポイント保存")
-    print("=" * 60)
-    Path(args.out_ckpt).parent.mkdir(parents=True, exist_ok=True)
-    save_state = {k: v for k, v in model.state_dict().items() if not k.startswith('llama_model.')}
-    torch.save({"state_dict": save_state}, args.out_ckpt)
-    print(f"Checkpoint saved: {args.out_ckpt}")
-    print("=" * 60)
-    print("学習完了！")
-    print("=" * 60)
+            print(f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}{mark}")
+            with open(log_csv, "a", newline="") as f:
+                csv.writer(f).writerow([epoch, f"{avg_train:.6f}", f"{avg_val:.6f}"])
+
+        print(f"Best val loss: {best_val:.4f}  Checkpoint: {args.out_ckpt}")
+
+        print("\n" + "=" * 60)
+        print("Step 6: テスト評価")
+        print("=" * 60)
+        # best checkpoint をロードしてテスト評価
+        ckpt = torch.load(args.out_ckpt, map_location="cpu")
+        model.load_state_dict(ckpt["state_dict"], strict=False)
+        model.to(args.device)
+        test_r = evaluate_metrics(model, test_dataset, args.device)
+        print(
+            f"Test  f1_action={test_r['action']:.4f}  rouge_possession={test_r['possession']:.4f}"
+            f"  rouge_zone={test_r['zone']:.4f}  rouge_pressure={test_r['pressure']:.4f}"
+        )
+
+        print("\n" + "=" * 60)
+        print("Step 7: チェックポイント保存済み（best val epoch）")
+        print("=" * 60)
+        print(f"Checkpoint saved: {args.out_ckpt}")
+        print("=" * 60)
+        print("学習完了！")
+        print("=" * 60)
 
 
 if __name__ == "__main__":

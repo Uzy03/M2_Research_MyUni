@@ -57,6 +57,7 @@ USE_ANS_TOKEN   ?= 0
 QFORMER_HEADS   ?= 1
 USE_CHAT_TEMPLATE ?= 0
 SHORT_INSTRUCTION ?= 0
+CURRICULUM_EPOCHS ?= 5,5,5,5
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -100,7 +101,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
-        train_action_alignment inference_soccer_qa run_pipeline \
+        train_action_alignment run_curriculum inference_soccer_qa run_pipeline \
         check smoke smoke_phase2 clean
 
 build:
@@ -435,6 +436,26 @@ train_action_alignment:
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
+
+run_curriculum:
+	mkdir -p $(PHASE2_DIR)
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(REGRESSION_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(ACTION_CKPT) \
+	    --context_len $(SD_CONTEXT) \
+	    --batch_size $(BATCH_PHASE2) \
+	    --max_games $(MAX_GAMES) \
+	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
+	    --lora_rank $(LORA_RANK) \
+	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
+	    --qformer_heads $(QFORMER_HEADS) \
+	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
+	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
+	    --curriculum_stages $(CURRICULUM_EPOCHS) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE2_DIR)/curriculum.log
 
 inference_soccer_qa:
 	mkdir -p $(PHASE3_DIR)

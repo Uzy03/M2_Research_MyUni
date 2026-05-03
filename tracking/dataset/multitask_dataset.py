@@ -75,7 +75,8 @@ _FALLBACK_PRESSURE = "There is low pressure around the ball."
 
 
 class MultiTaskDataset(Dataset):
-    def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False):
+    def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False,
+                 allowed_tasks=None):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
@@ -91,6 +92,12 @@ class MultiTaskDataset(Dataset):
             data = [e for e in data if e['game_id'] in allowed]
         self.entries = data
         self.use_short_instruction = use_short_instruction
+        if allowed_tasks is None:
+            self._tasks = TASKS
+        else:
+            self._tasks = [t for t in TASKS if t['name'] in allowed_tasks]
+            if not self._tasks:
+                raise ValueError(f"allowed_tasks={allowed_tasks!r} に一致するタスクがありません")
 
     def __len__(self):
         return len(self.entries)
@@ -122,12 +129,12 @@ class MultiTaskDataset(Dataset):
         seq_id = entry.get('clip_id', str(idx))
 
         instr_key = 'short_instruction' if self.use_short_instruction else 'instruction'
-        for task in random.sample(TASKS, len(TASKS)):
+        for task in random.sample(self._tasks, len(self._tasks)):
             answer = entry.get(task['label_field'])
             if answer:
                 return feat, msk, task[instr_key], answer, task['name'], seq_id
 
-        # Fallback: pressure label is always non-None after add_task_labels
-        pressure_task = TASKS[3]
-        answer = entry.get(pressure_task['label_field'], _FALLBACK_PRESSURE)
-        return feat, msk, pressure_task[instr_key], answer, pressure_task['name'], seq_id
+        # Fallback: self._tasks[0] (allowed_tasks の先頭 = 通常 action)
+        fallback_task = self._tasks[0]
+        answer = entry.get(fallback_task['label_field'], '')
+        return feat, msk, fallback_task[instr_key], answer, fallback_task['name'], seq_id
