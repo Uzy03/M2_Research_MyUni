@@ -25,6 +25,7 @@ TASKS = [
             "List the soccer actions in this tracking sequence as comma-separated keywords. "
             f"Use only: {_ACTION_VOCAB_STR}."
         ),
+        "short_instruction": f"Soccer actions (comma-separated): {_ACTION_VOCAB_STR}.",
         "label_field": "label_action",
         "max_new_tokens": 80,
     },
@@ -36,6 +37,7 @@ TASKS = [
             "'The home team has ball possession in this sequence.' or "
             "'The away team has ball possession in this sequence.'"
         ),
+        "short_instruction": "Ball possession? Home or away?",
         "label_field": "label_possession",
         "max_new_tokens": 40,
     },
@@ -46,6 +48,10 @@ TASKS = [
             "Answer using the template: 'The play is in the {side} of the {third}.' "
             "Side: left side / center / right side. "
             "Third: defensive third / middle third / attacking third."
+        ),
+        "short_instruction": (
+            "Field zone? Side: left side/center/right side. "
+            "Third: defensive/middle/attacking third."
         ),
         "label_field": "label_zone",
         "max_new_tokens": 40,
@@ -59,6 +65,7 @@ TASKS = [
             "'The players are applying medium pressure around the ball.' / "
             "'There is low pressure around the ball.'"
         ),
+        "short_instruction": "Pressure level? High/medium/low.",
         "label_field": "label_pressure",
         "max_new_tokens": 40,
     },
@@ -68,7 +75,7 @@ _FALLBACK_PRESSURE = "There is low pressure around the ball."
 
 
 class MultiTaskDataset(Dataset):
-    def __init__(self, json_path, context_len=20, max_games=0):
+    def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
@@ -83,6 +90,7 @@ class MultiTaskDataset(Dataset):
                     allowed.add(e['game_id'])
             data = [e for e in data if e['game_id'] in allowed]
         self.entries = data
+        self.use_short_instruction = use_short_instruction
 
     def __len__(self):
         return len(self.entries)
@@ -113,12 +121,13 @@ class MultiTaskDataset(Dataset):
         feat, msk = self._make_feat(npy, mask)
         seq_id = entry.get('clip_id', str(idx))
 
+        instr_key = 'short_instruction' if self.use_short_instruction else 'instruction'
         for task in random.sample(TASKS, len(TASKS)):
             answer = entry.get(task['label_field'])
             if answer:
-                return feat, msk, task['instruction'], answer, task['name'], seq_id
+                return feat, msk, task[instr_key], answer, task['name'], seq_id
 
         # Fallback: pressure label is always non-None after add_task_labels
         pressure_task = TASKS[3]
         answer = entry.get(pressure_task['label_field'], _FALLBACK_PRESSURE)
-        return feat, msk, pressure_task['instruction'], answer, pressure_task['name'], seq_id
+        return feat, msk, pressure_task[instr_key], answer, pressure_task['name'], seq_id

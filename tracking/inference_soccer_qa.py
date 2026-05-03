@@ -60,6 +60,10 @@ def parse_args():
                         help="Insert <ANS> token between instruction and answer")
     parser.add_argument('--qformer_heads', type=int, default=1,
                         help="Multi-head Q-Former heads (1=baseline)")
+    parser.add_argument('--use_chat_template', action='store_true',
+                        help="Use LLaMA-3 assistant header as answer boundary signal")
+    parser.add_argument('--short_instruction', action='store_true',
+                        help="Use shortened instruction texts to reduce token count")
     return parser.parse_args()
 
 
@@ -81,7 +85,8 @@ def load_clips(json_path, max_samples, seed, max_games=0):
     return clips, Path(json_path).parent
 
 
-def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1):
+def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1,
+               use_chat_template=False):
     model = matchvoice_model_tracking(
         load_checkpoint=False,
         num_features=768,
@@ -91,6 +96,7 @@ def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1
         open_llm_decoder=False,
         use_ans_token=use_ans_token,
         qformer_heads=qformer_heads,
+        use_chat_template=use_chat_template,
         num_players=23,
         in_features=5,
         d_model=256,
@@ -135,7 +141,8 @@ def main():
 
     model = load_model(args.ckpt_path, args.llm_ckpt, args.device,
                        use_ans_token=args.use_ans_token,
-                       qformer_heads=args.qformer_heads)
+                       qformer_heads=args.qformer_heads,
+                       use_chat_template=args.use_chat_template)
     model._repetition_penalty = args.repetition_penalty
     model._max_new_tokens     = args.max_new_tokens
     print(f"Model ready on {args.device}")
@@ -149,11 +156,12 @@ def main():
             continue
         tracking, mask_t = make_feat(entry, base_dir, args.context_len, args.device)
 
+        instr_key = 'short_instruction' if args.short_instruction else 'instruction'
         for task in TASKS:
             gt = entry.get(task['label_field'], '')
             if not gt:
                 continue
-            model.instruction = task['instruction']
+            model.instruction = task.get(instr_key, task['instruction'])
             model._max_new_tokens = task.get('max_new_tokens', args.max_new_tokens)
             samples = {
                 "tracking":       tracking,

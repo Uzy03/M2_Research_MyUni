@@ -60,6 +60,7 @@ class matchvoice_model_all_blocks(nn.Module):
                  llm_lora_dropout = 0.05,
                  use_ans_token = False,
                  qformer_heads = 1,
+                 use_chat_template = False,
                  **kwargs,
                  ):
         super().__init__()
@@ -78,6 +79,11 @@ class matchvoice_model_all_blocks(nn.Module):
         self.llama_model.resize_token_embeddings(len(self.tokenizer))
         self.use_ans_token = use_ans_token
         self.ans_token_id = self.tokenizer.convert_tokens_to_ids("<ANS>")
+        self.use_chat_template = use_chat_template
+        self._asst_header_ids = self.tokenizer.encode(
+            "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+            add_special_tokens=False
+        )
         if self.open_llm_decoder == True:
             lora_config = LoraConfig(
                 r=llm_lora_rank, 
@@ -297,6 +303,11 @@ class matchvoice_model_all_blocks(nn.Module):
                 torch.tensor([[self.ans_token_id]], device=inputs_llama.device)
             ).expand(B, -1, -1)
             parts.append(ans_tok_embed)
+
+        if self.use_chat_template:
+            ct_ids = torch.tensor([self._asst_header_ids], device=inputs_llama.device)
+            ct_embed = embed_fn(ct_ids).expand(B, -1, -1)
+            parts.append(ct_embed)
 
         combined = torch.cat(parts, dim=1).to(dtype=torch.float16)
         attn_mask = torch.ones(combined.shape[:2], dtype=torch.long, device=combined.device)

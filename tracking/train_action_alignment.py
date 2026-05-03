@@ -17,7 +17,8 @@ from tracking.dataset.multitask_dataset import MultiTaskDataset, TASKS, ACTION_V
 from model.matchvoice_model_tracking import matchvoice_model_tracking
 
 
-def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=None):
+def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=None,
+                    use_chat_template=False, asst_header_ids=None):
     def collate_fn(batch):
         feats, masks, instructions, target_texts, task_names, seq_ids = zip(*batch)
         tracking = torch.stack(feats)
@@ -28,7 +29,10 @@ def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=Non
         for instruction, target_text in zip(instructions, target_texts):
             inst_ids = tokenizer(instruction, add_special_tokens=False).input_ids
             ans_ids  = tokenizer(target_text + tokenizer.eos_token, add_special_tokens=False).input_ids
-            if use_ans_token and ans_token_id is not None:
+            if use_chat_template and asst_header_ids:
+                full_ids = ([bos_id] + inst_ids + asst_header_ids + ans_ids)[:max_length]
+                lbl      = ([-100]   + [-100] * len(inst_ids) + [-100] * len(asst_header_ids) + ans_ids)[:max_length]
+            elif use_ans_token and ans_token_id is not None:
                 full_ids = ([bos_id] + inst_ids + [ans_token_id] + ans_ids)[:max_length]
                 lbl      = ([-100]   + [-100] * len(inst_ids) + [-100] + ans_ids)[:max_length]
             else:
@@ -151,13 +155,18 @@ def main():
                         help="Insert <ANS> token between instruction and answer")
     parser.add_argument("--qformer_heads", type=int, default=1,
                         help="Multi-head Q-Former heads (1=baseline, 4 or 8 for ablation)")
+    parser.add_argument("--use_chat_template", action="store_true",
+                        help="Use LLaMA-3 assistant header as answer boundary signal")
+    parser.add_argument("--short_instruction", action="store_true",
+                        help="Use shortened instruction texts to reduce token count")
     args = parser.parse_args()
 
     print("=" * 60)
     print("Step 1: データセット読み込み・train/val/test 分割")
     print("=" * 60)
     random.seed(args.seed)
-    full_dataset = MultiTaskDataset(args.json_path, args.context_len, max_games=args.max_games)
+    full_dataset = MultiTaskDataset(args.json_path, args.context_len, max_games=args.max_games,
+                                    use_short_instruction=args.short_instruction)
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
     if args.max_samples > 0:
@@ -191,6 +200,7 @@ def main():
         llm_lora_rank=args.lora_rank,
         use_ans_token=args.use_ans_token,
         qformer_heads=args.qformer_heads,
+        use_chat_template=args.use_chat_template,
         num_players=23,
         in_features=5,
         d_model=256,
@@ -237,6 +247,8 @@ def main():
         model.tokenizer, args.max_length,
         use_ans_token=args.use_ans_token,
         ans_token_id=model.ans_token_id,
+        use_chat_template=args.use_chat_template,
+        asst_header_ids=model._asst_header_ids,
     )
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                               collate_fn=collate_fn, num_workers=4, pin_memory=True)

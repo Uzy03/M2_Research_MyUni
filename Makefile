@@ -55,6 +55,8 @@ MAX_NEW_TOKENS  ?= 40
 LORA_RANK       ?= 32
 USE_ANS_TOKEN   ?= 0
 QFORMER_HEADS   ?= 1
+USE_CHAT_TEMPLATE ?= 0
+SHORT_INSTRUCTION ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -429,6 +431,8 @@ train_action_alignment:
 	    --lora_rank $(LORA_RANK) \
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
+	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
+	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
@@ -445,6 +449,8 @@ inference_soccer_qa:
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
+	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
+	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE3_DIR)/inference.log
 
@@ -494,6 +500,8 @@ smoke:
 	    --lora_rank $(LORA_RANK) \
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
+	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
+	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P2)/smoke.log
 	@echo "=== smoke: Phase 3 ==="
@@ -508,6 +516,8 @@ smoke:
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
+	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
+	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P3)/smoke.log
 	@echo "=== smoke done: $(SMOKE_DIR) ==="
@@ -527,6 +537,8 @@ smoke_phase2:
 	    --lora_rank $(LORA_RANK) \
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
+	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
+	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/smoke.log
 

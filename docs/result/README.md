@@ -14,6 +14,7 @@
 | baseline | 5 | 0.0708 | |
 | rep=1.3, max=40 | 5 | 0.0566 | |
 | task-specific max | 10 | 0.0545 | |
+| ANS token | 10 | 0.0639 | Phase1はANS token非依存。乱数差と考えられる |
 
 ---
 
@@ -34,6 +35,7 @@
 | baseline | 5 | 1.0 | 128 | 0.2771 | 0.1478 | 0.1665 | 0.1372 | instruction echo・繰り返し問題あり |
 | rep=1.3, max=40 | 5 | 1.3 | 40 | 0.1341 | 0.4142 | 0.3222 | 0.3088 | possession/zone/pressure 大幅改善、action低下（語彙列挙がmax=40で不足） |
 | task-specific max | 10 | 1.3 | action=80, others=40 | 0.2235 | 0.4036 | 0.4428 | 0.2555 | action回復、zone大幅改善 |
+| ANS token | 10 | 1.3 | action=80, others=40 | 0.2125 | 0.4262 | 0.4469 | 0.2314 | echo依然残る。possession/zone微改善、action/pressure微低下 |
 
 ---
 
@@ -42,6 +44,7 @@
 | Experiment | Games | LoRA | lora_rank | f1_action↑ | rouge_possession↑ | rouge_zone↑ | rouge_pressure↑ | Notes |
 |---|---|---|---|---|---|---|---|---|
 | LoRA拡張(k,o_proj) + rank32 | 10 | ON | 32 | - | - | - | - | Phase2単体未計測 |
+| ANS token | 10 | ON | 32 | 0.3923 | 0.0971 | 0.0874 | 0.0920 | action F1↑、possession/zone/pressure 大幅低下 |
 
 ---
 
@@ -84,3 +87,24 @@ fused tracking tokens が instruction 情報を含むため、LLM は `[fused_tr
 - zone ROUGE-L が 0.32 → 0.44 に大幅改善（データ量増加の効果）
 - possession・pressure はやや低下（誤差範囲内）
 - 全体として 5 試合より安定した結果
+
+### ANS token の観察
+
+**Phase 3**:
+- baseline (task-specific max) との比較で差は小さく、全体的には大きな改善なし
+- action: 0.2235 → 0.2125（微低下）。生成結果を見ると `. List the soccer actions...` や番号付き語彙リスト（`1. block\n2. clearance\n...`）の echo が依然として発生
+- possession: 0.4036 → 0.4262（微改善）。正答フレーズ + 繰り返しが混在する形に変化
+- zone: 0.4428 → 0.4469（ほぼ同等）
+- pressure: 0.2555 → 0.2314（低下）。高圧・中圧の誤答が多い
+- **結論**: `<ANS>` トークン単体では instruction echo を十分に抑制できなかった
+
+**Phase 2 の異変**:
+- action F1 は 0.3805 → 0.3923 に小幅改善
+- possession / zone / pressure の ROUGE が大幅低下（0.15 → 0.10 程度）
+- 原因不明。train/test 分割の乱数差の可能性あり
+
+**生成パターン（Phase 3 CSV より）**:
+- action: instruction テキストを先頭に echo してから action 語彙を続ける → F1 低下
+- action: `. 1\nList the...` や番号付きリストを生成 → F1 = 0.00（語彙形式が不一致）
+- possession: 正答フレーズを繰り返す or home/away を交互に出力するサンプルあり
+- zone / pressure: `Where on the field...` や `Describe the pressing...` を先頭に echo してから回答
