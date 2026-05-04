@@ -159,3 +159,46 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         sys.stdout = original_stdout
         loss = outputs.loss
         return loss
+
+    def forward_contrastive(self, samples):
+        """TrackingEncoder(frozen) → Q-Former → llama_proj の出力を返す。対照学習用。"""
+        tracking_tensor = samples['tracking']
+        mask_tensor = samples.get('mask')
+
+        with torch.no_grad():
+            video_features = self.visual_encoder(tracking_tensor, mask_tensor)
+
+        batch_size, time_length, _ = video_features.size()
+        video_features = video_features.unsqueeze(-2)
+        video_features = self.ln_vision(video_features)
+        video_features = einops.rearrange(video_features, 'b t n f -> (b t) n f',
+                                          b=batch_size, t=time_length)
+
+        if self.need_temporal == "yes":
+            position_ids = torch.arange(time_length, dtype=torch.long,
+                                        device=video_features.device)
+            position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
+            frame_position_embeddings = self.video_frame_position_embedding(position_ids)
+            frame_position_embeddings = frame_position_embeddings.unsqueeze(-2)
+
+        frame_hidden_state = einops.rearrange(video_features, '(b t) n f -> b t n f',
+                                              b=batch_size, t=time_length)
+        if self.need_temporal == "yes":
+            frame_hidden_state = frame_position_embeddings + frame_hidden_state
+
+        frame_hidden_state = einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h',
+                                              b=batch_size, t=time_length)
+        frame_atts = torch.ones(frame_hidden_state.size()[:-1],
+                                dtype=torch.long).to(frame_hidden_state)
+
+        video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(
+            frame_hidden_state.device)
+        video_query_output = self.video_Qformer.bert(
+            query_embeds=video_query_tokens,
+            encoder_hidden_states=frame_hidden_state,
+            encoder_attention_mask=frame_atts,
+            return_dict=True,
+        )
+        video_hidden = video_query_output.last_hidden_state
+        inputs_llama = self.llama_proj(video_hidden)  # (B, 32, llm_hidden)
+        return inputs_llama

@@ -86,7 +86,9 @@ SD_MAXLEN         := 576
 BATCH_PHASE1      ?= 32
 BATCH_PHASE2      ?= 4
 EPOCHS_PHASE1     ?= 20
-EPOCHS_PHASE2     ?= 20
+EPOCHS_PHASE2     ?= 10
+EPOCHS_PHASE2C    ?= 20
+CONTRASTIVE_CKPT   = checkpoints/phase2_contrastive/contrastive.pth
 
 DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -e CUDA_VISIBLE_DEVICES=$(GPU) \
@@ -106,6 +108,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_action_alignment run_curriculum inference_soccer_qa \
         run_pipeline run_pipeline_curriculum \
         train_phase1 run_from_phase2 run_curriculum_from_phase2 \
+        train_contrastive_phase2 run_contrastive_from_phase2 \
         check smoke smoke_phase2 clean
 
 build:
@@ -509,6 +512,34 @@ run_curriculum_from_phase2:
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
 	    REGRESSION_CKPT=$(SHARED_PHASE1_CKPT)
 	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+
+train_contrastive_phase2:
+	mkdir -p checkpoints/phase2_contrastive
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) \
+	python tracking/train_contrastive_phase2.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(SHARED_PHASE1_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(CONTRASTIVE_CKPT) \
+	    --context_len $(SD_CONTEXT) \
+	    --batch_size $(BATCH_PHASE2) \
+	    --epochs $(EPOCHS_PHASE2C) \
+	    --max_games $(MAX_GAMES) \
+	    --device $(DEVICE) \
+	    2>&1 | tee checkpoints/phase2_contrastive/train.log
+
+run_contrastive_from_phase2:
+	$(MAKE) train_contrastive_phase2 MAX_GAMES=$(MAX_GAMES)
+	mkdir -p checkpoints/phase2_contrastive
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(CONTRASTIVE_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_csv checkpoints/phase2_contrastive/inference_results.csv \
+	    --context_len $(SD_CONTEXT) \
+	    --max_games $(MAX_GAMES) \
+	    --device $(DEVICE) \
+	    2>&1 | tee checkpoints/phase2_contrastive/inference.log
 
 check:
 	python -m py_compile tracking/train_action_alignment.py
