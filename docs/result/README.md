@@ -66,6 +66,39 @@ fused tracking tokens が instruction 情報を含むため、LLM は `[fused_tr
 
 ---
 
+## Phase 2: カリキュラム学習（学習後テスト）
+
+> 設定: checkpoints/202605041201 / LoRA=ON rank=32 / 全ゲーム(5392サンプル, train4314/val539/test539) / 各ステージ5エポック
+
+| Stage | Tasks | best_val↓ | f1_action↑ | rouge_possession↑ | rouge_zone↑ | rouge_pressure↑ |
+|---|---|---|---|---|---|---|
+| Stage 1 | action | 0.7241 | 0.4341 | 0.1198 | 0.0481 | 0.0482 |
+| Stage 2 | action + possession | 0.2912 | 0.5028 | 0.1821 | 0.1158 | 0.1106 |
+| Stage 3 | action + possession + zone | 0.1912 | 0.4585 | 0.1743 | 0.1524 | 0.1083 |
+| Stage 4 (final) | all 4 tasks | 0.1246 | 0.4769 | 0.1825 | 0.1523 | 0.1187 |
+
+> **注**: Stage 2 で action F1 が 0.4341 → 0.5028 に上昇するが、Stage 3 で 0.4585 に低下（タスク追加による干渉）。
+> カリキュラム学習は廃案（理由: Q-Former がタスク専用トークンに特化してしまい、汎用 QA に使えない）。
+
+---
+
+## Phase 3: カリキュラム学習後の推論
+
+> 設定: checkpoints/202605041201 / 20 clips / rep=1.3 / max=40 / free_config=qa_action.json
+
+| Experiment | Clips | f1_action↑ | Notes |
+|---|---|---|---|
+| カリキュラム baseline (全ゲーム, LoRA ON) | 20 (n=15) | 0.2647 | instruction echo・繰り返し残存。Free QA はほぼ echo または無限ループ |
+
+**Free QA 生成例（instruction を変えた場合）**:
+- `"List the soccer actions occurring in this tracking sequence in chronological order."` → ほぼ全クリップで instruction 文を繰り返す
+- 一部クリップのみ `"1. The player dribbles the ball. 2. ..."` のような文章を生成
+- 複数クリップで `"... Read more... Read more..."` の無限ループ
+
+**バグ**: Python 3.8 では `Path.with_stem()` が存在しない → Free QA CSV 保存時に `AttributeError` クラッシュ（推論自体は完了済み）。
+
+---
+
 ## 観察メモ
 
 ### baseline の生成問題

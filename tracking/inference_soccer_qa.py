@@ -253,7 +253,8 @@ def main():
             free_rows.append({'clip_id': entry.get('clip_id', ''), 'instruction': free_instruction, 'generated': gen})
             print(f"  [{entry.get('clip_id','')}] {gen[:80]}")
 
-        free_csv = Path(args.out_csv).with_stem(Path(args.out_csv).stem + '_free_qa')
+        out_p = Path(args.out_csv)
+        free_csv = out_p.parent / (out_p.stem + '_free_qa' + out_p.suffix)
         with open(free_csv, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'])
             writer.writeheader()

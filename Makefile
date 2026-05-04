@@ -61,6 +61,7 @@ USE_CHAT_TEMPLATE ?= 0
 SHORT_INSTRUCTION ?= 0
 CURRICULUM_EPOCHS ?= 5,5,5,5
 ALLOWED_TASKS     ?= action
+NO_INSTRUCTION    ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -448,6 +449,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    $(if $(ALLOWED_TASKS),--allowed_tasks $(ALLOWED_TASKS),) \
+	    $(if $(filter 1,$(NO_INSTRUCTION)),--no_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 

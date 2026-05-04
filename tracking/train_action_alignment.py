@@ -25,7 +25,7 @@ STAGE_TASKS = [
 
 
 def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=None,
-                    use_chat_template=False, asst_header_ids=None):
+                    use_chat_template=False, asst_header_ids=None, no_instruction=False):
     def collate_fn(batch):
         feats, masks, instructions, target_texts, task_names, seq_ids = zip(*batch)
         tracking = torch.stack(feats)
@@ -34,6 +34,8 @@ def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=Non
         input_ids_list, labels_list, attn_list = [], [], []
         bos_id = tokenizer.bos_token_id
         for instruction, target_text in zip(instructions, target_texts):
+            if no_instruction:
+                instruction = ''
             inst_ids = tokenizer(instruction, add_special_tokens=False).input_ids
             ans_ids  = tokenizer(target_text + tokenizer.eos_token, add_special_tokens=False).input_ids
             if use_chat_template and asst_header_ids:
@@ -92,7 +94,7 @@ def compute_f1_action(pred: str, gt: str):
     return 2 * p * r / (p + r) if (p + r) > 0 else 0.0
 
 
-def evaluate_metrics(model, dataset, device, max_eval=200, seed=0, allowed_tasks=None):
+def evaluate_metrics(model, dataset, device, max_eval=200, seed=0, allowed_tasks=None, no_instruction=False):
     """Generate predictions and compute per-task metrics (F1 for action, ROUGE-L for others)."""
     logging.getLogger("transformers").setLevel(logging.ERROR)
     warnings.filterwarnings("ignore", message=".*attention mask.*")
@@ -111,7 +113,7 @@ def evaluate_metrics(model, dataset, device, max_eval=200, seed=0, allowed_tasks
             feat, msk, instruction, answer, task_name, seq_id = item
             if task_name not in task_scores:
                 continue
-            model.instruction = instruction
+            model.instruction = '' if no_instruction else instruction
             samples = {
                 "tracking":       feat.unsqueeze(0).to(device),
                 "mask":           msk.unsqueeze(0).to(device),
@@ -271,6 +273,8 @@ def main():
                         help="カリキュラム学習のエポック数（例: '5,5,5,5'）。省略時は joint training。")
     parser.add_argument("--allowed_tasks", type=str, default=None,
                         help="学習・評価するタスク（カンマ区切り、例: action）。省略時は全タスク")
+    parser.add_argument('--no_instruction', action='store_true',
+                        help='指示文なしでトラッキング埋め込みのみをLLMに渡す')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -364,6 +368,7 @@ def main():
         ans_token_id=model.ans_token_id,
         use_chat_template=args.use_chat_template,
         asst_header_ids=model._asst_header_ids,
+        no_instruction=args.no_instruction,
     )
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                               collate_fn=collate_fn, num_workers=4, pin_memory=True)
@@ -443,7 +448,8 @@ def main():
         ckpt = torch.load(args.out_ckpt, map_location="cpu")
         model.load_state_dict(ckpt["state_dict"], strict=False)
         model.to(args.device)
-        test_r = evaluate_metrics(model, test_dataset, args.device, allowed_tasks=allowed_tasks)
+        test_r = evaluate_metrics(model, test_dataset, args.device, allowed_tasks=allowed_tasks,
+                                  no_instruction=args.no_instruction)
         for name, score in test_r.items():
             metric = 'f1' if name == 'action' else 'rouge_l'
             print(f"  Test {name} {metric}={score:.4f}")
