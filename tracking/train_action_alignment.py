@@ -92,12 +92,13 @@ def compute_f1_action(pred: str, gt: str):
     return 2 * p * r / (p + r) if (p + r) > 0 else 0.0
 
 
-def evaluate_metrics(model, dataset, device, max_eval=200, seed=0):
+def evaluate_metrics(model, dataset, device, max_eval=200, seed=0, allowed_tasks=None):
     """Generate predictions and compute per-task metrics (F1 for action, ROUGE-L for others)."""
     logging.getLogger("transformers").setLevel(logging.ERROR)
     warnings.filterwarnings("ignore", message=".*attention mask.*")
     model.eval()
-    task_scores = {t['name']: [] for t in TASKS}
+    active_tasks = [t for t in TASKS if allowed_tasks is None or t['name'] in allowed_tasks]
+    task_scores = {t['name']: [] for t in active_tasks}
 
     indices = list(range(len(dataset)))
     rng = random.Random(seed)
@@ -108,6 +109,8 @@ def evaluate_metrics(model, dataset, device, max_eval=200, seed=0):
         for idx in indices:
             item = dataset[idx]
             feat, msk, instruction, answer, task_name, seq_id = item
+            if task_name not in task_scores:
+                continue
             model.instruction = instruction
             samples = {
                 "tracking":       feat.unsqueeze(0).to(device),
@@ -266,14 +269,19 @@ def main():
                         help="Use shortened instruction texts to reduce token count")
     parser.add_argument("--curriculum_stages", type=str, default=None,
                         help="カリキュラム学習のエポック数（例: '5,5,5,5'）。省略時は joint training。")
+    parser.add_argument("--allowed_tasks", type=str, default=None,
+                        help="学習・評価するタスク（カンマ区切り、例: action）。省略時は全タスク")
     args = parser.parse_args()
+
+    allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
 
     print("=" * 60)
     print("Step 1: データセット読み込み・train/val/test 分割")
     print("=" * 60)
     random.seed(args.seed)
     full_dataset = MultiTaskDataset(args.json_path, args.context_len, max_games=args.max_games,
-                                    use_short_instruction=args.short_instruction)
+                                    use_short_instruction=args.short_instruction,
+                                    allowed_tasks=allowed_tasks)
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
     if args.max_samples > 0:
@@ -435,11 +443,10 @@ def main():
         ckpt = torch.load(args.out_ckpt, map_location="cpu")
         model.load_state_dict(ckpt["state_dict"], strict=False)
         model.to(args.device)
-        test_r = evaluate_metrics(model, test_dataset, args.device)
-        print(
-            f"Test  f1_action={test_r['action']:.4f}  rouge_possession={test_r['possession']:.4f}"
-            f"  rouge_zone={test_r['zone']:.4f}  rouge_pressure={test_r['pressure']:.4f}"
-        )
+        test_r = evaluate_metrics(model, test_dataset, args.device, allowed_tasks=allowed_tasks)
+        for name, score in test_r.items():
+            metric = 'f1' if name == 'action' else 'rouge_l'
+            print(f"  Test {name} {metric}={score:.4f}")
 
         print("\n" + "=" * 60)
         print("Step 7: チェックポイント保存済み（best val epoch）")

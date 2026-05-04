@@ -60,6 +60,7 @@ QFORMER_HEADS   ?= 1
 USE_CHAT_TEMPLATE ?= 0
 SHORT_INSTRUCTION ?= 0
 CURRICULUM_EPOCHS ?= 5,5,5,5
+ALLOWED_TASKS     ?= action
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -446,6 +447,7 @@ train_action_alignment:
 	    --qformer_heads $(QFORMER_HEADS) \
 	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
+	    $(if $(ALLOWED_TASKS),--allowed_tasks $(ALLOWED_TASKS),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
@@ -484,6 +486,8 @@ inference_soccer_qa:
 	    --qformer_heads $(QFORMER_HEADS) \
 	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
+	    $(if $(ALLOWED_TASKS),--tasks $(ALLOWED_TASKS),) \
+	    $(if $(QA_CONFIG),--free_config $(QA_CONFIG),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE3_DIR)/inference.log
 

@@ -64,6 +64,10 @@ def parse_args():
                         help="Use LLaMA-3 assistant header as answer boundary signal")
     parser.add_argument('--short_instruction', action='store_true',
                         help="Use shortened instruction texts to reduce token count")
+    parser.add_argument('--tasks', type=str, default=None,
+                        help="評価するタスク（カンマ区切り、例: action）。省略時は全タスク")
+    parser.add_argument('--free_config', type=str, default=None,
+                        help="自由QA用の config JSON（configs/qa_describe.json 等）。指定時は追加推論してCSV保存")
     return parser.parse_args()
 
 
@@ -147,7 +151,13 @@ def main():
     model._max_new_tokens     = args.max_new_tokens
     print(f"Model ready on {args.device}")
 
-    task_scores = {t['name']: [] for t in TASKS}
+    if args.tasks:
+        task_filter = set(args.tasks.split(','))
+        active_tasks = [t for t in TASKS if t['name'] in task_filter]
+    else:
+        active_tasks = TASKS
+
+    task_scores = {t['name']: [] for t in active_tasks}
     rows = []
 
     for i, entry in enumerate(clips):
@@ -157,7 +167,7 @@ def main():
         tracking, mask_t = make_feat(entry, base_dir, args.context_len, args.device)
 
         instr_key = 'short_instruction' if args.short_instruction else 'instruction'
-        for task in TASKS:
+        for task in active_tasks:
             gt = entry.get(task['label_field'], '')
             if not gt:
                 continue
@@ -200,7 +210,7 @@ def main():
 
     # Summary
     print("\n=== Results ===")
-    for task in TASKS:
+    for task in active_tasks:
         name = task['name']
         scores = task_scores[name]
         metric = 'f1_action' if name == 'action' else f'rouge_l_{name}'
@@ -213,6 +223,42 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nSaved {len(rows)} rows to {args.out_csv}")
+
+    if args.free_config:
+        with open(args.free_config) as f:
+            free_cfg = json.load(f)
+        free_instruction = free_cfg['instruction']
+        free_max_tokens  = free_cfg.get('max_new_tokens', args.max_new_tokens)
+        free_rows = []
+        print(f"\n=== Free QA: {free_instruction[:60]}... ===")
+        for entry in clips:
+            npy_path = base_dir / entry['npy_path']
+            if not npy_path.exists():
+                continue
+            tracking, mask_t = make_feat(entry, base_dir, args.context_len, args.device)
+            model.instruction = free_instruction
+            model._max_new_tokens = free_max_tokens
+            samples = {
+                "tracking":       tracking,
+                "mask":           mask_t,
+                "labels":         torch.zeros(1, 1, dtype=torch.long).to(args.device),
+                "attention_mask": torch.ones(1, 1, dtype=torch.long).to(args.device),
+                "input_ids":      torch.zeros(1, 1, dtype=torch.long).to(args.device),
+                "caption_text":   [""],
+                "video_path":     [entry.get('clip_id', '')],
+            }
+            with torch.no_grad():
+                generated_list, _, _ = model(samples, validating=True)
+            gen = generated_list[0] if generated_list else ""
+            free_rows.append({'clip_id': entry.get('clip_id', ''), 'instruction': free_instruction, 'generated': gen})
+            print(f"  [{entry.get('clip_id','')}] {gen[:80]}")
+
+        free_csv = Path(args.out_csv).with_stem(Path(args.out_csv).stem + '_free_qa')
+        with open(free_csv, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'])
+            writer.writeheader()
+            writer.writerows(free_rows)
+        print(f"Free QA saved: {free_csv}  ({len(free_rows)} clips)")
 
 
 if __name__ == '__main__':
