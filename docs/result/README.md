@@ -168,6 +168,33 @@ gen: "In this soccer sequence, performing foul received, trap and pass."
 
 ---
 
+## Phase 4: Zero-shot スタイル汎化テスト
+
+> 設定: 20clips / SENTENCE_FORMAT=1 / free_config=configs/qa_commentary.json  
+> 指示文: `"Describe the play in this soccer sequence in a lively commentary style."`
+
+| Experiment | f1_action↑ | Free QA (commentary) | Notes |
+|---|---|---|---|
+| 指示文あり (202605051303) | **0.8371** (n=15) | 全20クリップで文章を生成（スタイルは学習フォーマット固定） | sentence_instruction で評価 |
+| 指示文なし (202605051310) | - | 全20クリップ空文字 | 指示文なし学習のため推論指示文に未対応 |
+
+**生成例（Run A、commentary 指示に対する出力）**:
+```
+instruction: "Describe the play in this soccer sequence in a lively commentary style."
+gen: "In this soccer sequence, performing pass, touch and clearance."        ← 学習フォーマットのまま
+gen: "In this soccer sequence, performing throw-in, trap and pass."          ← 実況風にならず
+gen: "In this soccer sequence, performing shot, block, pass and trap."
+gen: "In this soccer sequence, performing corner kick and shot."
+```
+
+**考察**:
+- Run A は未知の指示文に対しても全クリップで文章を生成 → **指示文の有無に対する汎化**はできている
+- ただし出力スタイルは学習時のフォーマット `"In this soccer sequence, performing..."` から変化しない → **スタイル指示への追従**は未達
+- 原因: モデルは「アクションを sentence 形式で出力する」パターンに特化して学習しており、スタイルの変え方を学習していない
+- 次ステップ候補: 多様なスタイルのターゲットで学習する、またはコメンタリー形式のデータを追加する
+
+---
+
 ## Phase 2: カリキュラム学習（学習後テスト）
 
 > 設定: checkpoints/202605041201 / LoRA=ON rank=32 / 全ゲーム(5392サンプル, train4314/val539/test539) / 各ステージ5エポック
