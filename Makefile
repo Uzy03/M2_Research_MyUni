@@ -492,6 +492,7 @@ inference_soccer_qa:
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    $(if $(ALLOWED_TASKS),--tasks $(ALLOWED_TASKS),) \
 	    $(if $(QA_CONFIG),--free_config $(QA_CONFIG),) \
+	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE3_DIR)/inference.log
 

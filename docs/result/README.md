@@ -111,6 +111,50 @@ gen: "shot, goalkeeper save, pass, throw-in, trap, shot, goalkeeper save, ..."  
 
 ---
 
+## Phase 2: 自然文ターゲット・LoRA なし（学習後テスト）
+
+> 設定: LoRA=OFF / action タスクのみ / 5ゲーム / 10エポック / 自然文ターゲット  
+> ターゲット形式: `"pass, trap"` → `"In this soccer sequence, performing pass and trap."`  
+> 評価: compute_f1_action をサブストリング検索に変更（カンマ区切り・自然文両対応）
+
+| Experiment | best_val (epoch) | Test f1_action↑ | Notes |
+|---|---|---|---|
+| 自然文 + 指示文あり (202605051303) | 0.3885 (ep7) | **0.7166** | 指示文: "Describe the soccer actions in this tracking sequence." |
+| 自然文 + 指示文なし (202605051310) | 0.3833 (ep7) | **0.7466** | 指示文なし学習でもわずかに高い |
+
+> **比較**: 語彙リスト形式 (202605042259) Test F1=0.5623 → 自然文形式で +0.15 改善
+
+---
+
+## Phase 3: 自然文ターゲット推論
+
+> 設定: 20clips / rep=1.3 / max=40 / free_config=qa_action.json
+
+| Experiment | Inference f1_action | Free QA | Notes |
+|---|---|---|---|
+| 自然文 + 指示文あり (202605051303) | 0.0000 ※ | **全20クリップで正常な英文を生成** | ※ 推論スクリプトが語彙リスト付き長指示文を渡すため空出力。正式F1はStep6の0.7166 |
+| 自然文 + 指示文なし (202605051310) | 0.0956 | 空文字 | 指示文なし学習のため推論時の指示文に未対応 |
+
+**Free QA 生成例（Run A、指示文: "List the soccer actions occurring in this tracking sequence in chronological order."）**:
+```
+gt:  "pass, touch, clearance"
+gen: "In this soccer sequence, performing pass, touch and clearance."  ← 完全一致
+
+gt:  "foul received, trap, pass, dribble, tackle"
+gen: "In this soccer sequence, performing foul received, trap and pass."
+
+gt:  "touch, pass, trap, dribble, cross, clearance"
+gen: "In this soccer sequence, performing trap, pass, dribble, cross, clearance and throw-in."
+```
+
+**考察**:
+- 自然文ターゲットに変更することで Test F1 が 0.56 → 0.72 に大幅改善
+- 自然文形式の学習により LLM が文章生成モードで動作し、Free QA も成立
+- 指示文なし学習は Test F1 がわずかに高いが、推論時に任意の指示文を受け付けられない
+- **指示文あり + 自然文ターゲットが最も汎用 QA に近い結果**
+
+---
+
 ## Phase 2: カリキュラム学習（学習後テスト）
 
 > 設定: checkpoints/202605041201 / LoRA=ON rank=32 / 全ゲーム(5392サンプル, train4314/val539/test539) / 各ステージ5エポック

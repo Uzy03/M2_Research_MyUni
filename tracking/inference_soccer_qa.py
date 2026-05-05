@@ -64,6 +64,8 @@ def parse_args():
                         help="Use LLaMA-3 assistant header as answer boundary signal")
     parser.add_argument('--short_instruction', action='store_true',
                         help="Use shortened instruction texts to reduce token count")
+    parser.add_argument('--sentence_format', action='store_true',
+                        help='action タスク評価時に sentence_instruction を使用する')
     parser.add_argument('--tasks', type=str, default=None,
                         help="評価するタスク（カンマ区切り、例: action）。省略時は全タスク")
     parser.add_argument('--free_config', type=str, default=None,
@@ -171,7 +173,10 @@ def main():
             gt = entry.get(task['label_field'], '')
             if not gt:
                 continue
-            model.instruction = task.get(instr_key, task['instruction'])
+            if args.sentence_format and task['name'] == 'action':
+                model.instruction = task.get('sentence_instruction', task['instruction'])
+            else:
+                model.instruction = task.get(instr_key, task['instruction'])
             model._max_new_tokens = task.get('max_new_tokens', args.max_new_tokens)
             samples = {
                 "tracking":       tracking,
