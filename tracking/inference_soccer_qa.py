@@ -153,7 +153,9 @@ def main():
     model._max_new_tokens     = args.max_new_tokens
     print(f"Model ready on {args.device}")
 
-    if args.tasks:
+    if args.tasks and args.tasks.lower() == 'none':
+        active_tasks = []
+    elif args.tasks:
         task_filter = set(args.tasks.split(','))
         active_tasks = [t for t in TASKS if t['name'] in task_filter]
     else:

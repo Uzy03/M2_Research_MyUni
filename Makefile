@@ -509,7 +509,7 @@ inference_free_qa:
 	    --max_games $(MAX_GAMES) \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
-	    --tasks action \
+	    --tasks none \
 	    $(if $(QA_CONFIG),--free_config $(QA_CONFIG),) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    --device $(DEVICE) \

@@ -191,7 +191,33 @@ gen: "In this soccer sequence, performing corner kick and shot."
 - Run A は未知の指示文に対しても全クリップで文章を生成 → **指示文の有無に対する汎化**はできている
 - ただし出力スタイルは学習時のフォーマット `"In this soccer sequence, performing..."` から変化しない → **スタイル指示への追従**は未達
 - 原因: モデルは「アクションを sentence 形式で出力する」パターンに特化して学習しており、スタイルの変え方を学習していない
-- 次ステップ候補: 多様なスタイルのターゲットで学習する、またはコメンタリー形式のデータを追加する
+
+---
+
+## Phase 4: 指示文内容理解テスト（フォーメーション質問）
+
+> 設定: 202605051303/phase4 / SENTENCE_FORMAT=1 / free_config=configs/qa_formation.json  
+> 指示文: `"What formation is the attacking team using in this soccer sequence? Answer with a formation like 4-4-2, 4-3-3, or 3-5-2."`
+
+**生成結果**:
+```
+[15/20クリップ] → 空文字
+[2/20クリップ] → "In this soccer sequence, formation and pass."       ← "formation" を action 語彙として誤認
+[2/20クリップ] → "In this soccer sequence, which is the attacking team using in this soccer seque..."  ← 指示文が漏れ出し
+[1/20クリップ] → "In this soccer sequence, which is the attacking team."
+```
+
+**結論: モデルは指示文の内容を理解していない**
+
+- `"4-4-2"` や `"4-3-3"` のようなフォーメーション回答は**一件も生成されなかった**
+- 学習した `"In this soccer sequence, performing X."` テンプレートから脱出できない
+- 指示文の単語（"formation", "attacking team"）がアクション語彙として誤認されてテンプレートに埋め込まれるケースが発生
+- **指示文トークンの役割**: 「何かを生成すべき」というトリガーとして機能しているが、内容の解釈には使われていない
+
+**3実験の比較まとめ**:
+- commentary 指示 → 全クリップで学習テンプレートを生成（スタイル無視）
+- formation 指示 → 15/20クリップが空文字、残りは指示単語の誤流用
+- 共通の結論: **Q-Former の出力はアクション抽出のみに特化しており、LLM は指示文内容ではなくトラッキング埋め込みのパターンにのみ反応している**
 
 ---
 
