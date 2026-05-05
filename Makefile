@@ -44,6 +44,7 @@ RUN_DIR    ?= checkpoints/$(RUN_TS)
 PHASE1_DIR  = $(RUN_DIR)/phase1
 PHASE2_DIR  = $(RUN_DIR)/phase2
 PHASE3_DIR  = $(RUN_DIR)/phase3
+PHASE4_DIR  = $(RUN_DIR)/phase4
 REGRESSION_CKPT  = $(PHASE1_DIR)/trajectory_regression.pth
 ACTION_CKPT      = $(PHASE2_DIR)/action_alignment.pth
 SHARED_PHASE1_DIR  = checkpoints/phase1
@@ -112,6 +113,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         run_pipeline run_pipeline_curriculum \
         train_phase1 run_from_phase2 run_curriculum_from_phase2 \
         train_contrastive_phase2 run_contrastive_from_phase2 \
+        inference_free_qa \
         check smoke smoke_phase2 clean
 
 build:
@@ -495,6 +497,23 @@ inference_soccer_qa:
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE3_DIR)/inference.log
+
+inference_free_qa:
+	mkdir -p $(PHASE4_DIR)
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(ACTION_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_csv $(PHASE4_DIR)/results.csv \
+	    --context_len $(SD_CONTEXT) \
+	    --max_games $(MAX_GAMES) \
+	    --repetition_penalty $(REP_PENALTY) \
+	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    --tasks action \
+	    $(if $(QA_CONFIG),--free_config $(QA_CONFIG),) \
+	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE4_DIR)/inference.log
 
 run_pipeline:
 	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))

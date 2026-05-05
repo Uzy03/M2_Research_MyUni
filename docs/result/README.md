@@ -128,30 +128,43 @@ gen: "shot, goalkeeper save, pass, throw-in, trap, shot, goalkeeper save, ..."  
 
 ## Phase 3: 自然文ターゲット推論
 
-> 設定: 20clips / rep=1.3 / max=40 / free_config=qa_action.json
+> 設定: 20clips / rep=1.3 / max=40 / SENTENCE_FORMAT=1 / free_config=qa_action.json  
+> 評価指示文（action タスク）: `"Describe the soccer actions in this tracking sequence."` (sentence_instruction)
 
-| Experiment | Inference f1_action | Free QA | Notes |
+| Experiment | Inference f1_action↑ | Free QA | Notes |
 |---|---|---|---|
-| 自然文 + 指示文あり (202605051303) | 0.0000 ※ | **全20クリップで正常な英文を生成** | ※ 推論スクリプトが語彙リスト付き長指示文を渡すため空出力。正式F1はStep6の0.7166 |
-| 自然文 + 指示文なし (202605051310) | 0.0956 | 空文字 | 指示文なし学習のため推論時の指示文に未対応 |
+| 自然文 + 指示文あり (202605051303) | **0.8371** (n=15) | 全20クリップで正常な英文を生成 | sentence_instruction で正しく評価 |
+| 自然文 + 指示文なし (202605051310) | 0.0000 (n=15) | 空文字 | 指示文なし学習のため推論時の指示文に未対応 |
 
-**Free QA 生成例（Run A、指示文: "List the soccer actions occurring in this tracking sequence in chronological order."）**:
+**生成例（Run A）**:
 ```
 gt:  "pass, touch, clearance"
-gen: "In this soccer sequence, performing pass, touch and clearance."  ← 完全一致
+gen: "In this soccer sequence, performing pass, touch and clearance."          F1=1.00
+
+gt:  "pass, trap, dribble, clearance, touch"
+gen: "In this soccer sequence, performing pass, trap, dribble, clearance and touch."  F1=1.00
+
+gt:  "touch, pass, trap, dribble, cross, clearance"
+gen: "In this soccer sequence, performing pass, trap, dribble, cross, clearance, touch and tackle."  F1=0.92
+
+gt:  "pass, shot, goalkeeper save, throw-in, trap"
+gen: "In this soccer sequence, performing shot, goalkeeper save and pass."     F1=0.75
+```
+
+**Free QA 生成例（Run A、指示文: "List the soccer actions occurring in this tracking sequence in chronological order." ← 学習時と異なる指示文）**:
+```
+gt:  "pass, touch, clearance"
+gen: "In this soccer sequence, performing pass, touch and clearance."
 
 gt:  "foul received, trap, pass, dribble, tackle"
 gen: "In this soccer sequence, performing foul received, trap and pass."
-
-gt:  "touch, pass, trap, dribble, cross, clearance"
-gen: "In this soccer sequence, performing trap, pass, dribble, cross, clearance and throw-in."
 ```
 
 **考察**:
-- 自然文ターゲットに変更することで Test F1 が 0.56 → 0.72 に大幅改善
-- 自然文形式の学習により LLM が文章生成モードで動作し、Free QA も成立
-- 指示文なし学習は Test F1 がわずかに高いが、推論時に任意の指示文を受け付けられない
-- **指示文あり + 自然文ターゲットが最も汎用 QA に近い結果**
+- 自然文ターゲット + 指示文あり: Inference F1=0.8371 で高精度な sentence 形式出力を実現
+- 学習時と異なる指示文（qa_action.json）でも正しい sentence 形式で出力 → 指示文への汎化が起きている
+- 指示文なし学習は Test F1=0.7466 と高いが、推論時に指示文を渡すと崩壊する
+- **正式な評価軸**: Test F1 (train.log Step6) + Free QA 目視確認。Phase 3 Inference F1 は参考値
 
 ---
 

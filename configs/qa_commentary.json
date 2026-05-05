@@ -1,0 +1,4 @@
+{
+    "instruction": "Describe the play in this soccer sequence in a lively commentary style.",
+    "max_new_tokens": 100
+}
