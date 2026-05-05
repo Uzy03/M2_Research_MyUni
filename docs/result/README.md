@@ -66,6 +66,51 @@ fused tracking tokens が instruction 情報を含むため、LLM は `[fused_tr
 
 ---
 
+## Phase 2: action 1タスク・LoRA なし（学習後テスト）
+
+> 設定: LoRA=OFF / action タスクのみ / 5ゲーム(5392サンプル) / 20エポック
+
+| Experiment | best_val (epoch) | Test f1_action↑ | Notes |
+|---|---|---|---|
+| 指示文あり (202605042259) | 0.7533 (ep10) | **0.5623** | ep11以降過学習(val→1.27) |
+| 指示文なし (202605050018) | 0.7128 (ep9) | **0.5477** | ep10以降過学習(val→1.07) |
+
+---
+
+## Phase 3: action 1タスク・LoRA なし推論
+
+> 設定: 20clips / rep=1.3 / max=40 / ALLOWED_TASKS=action / free_config=qa_action.json
+
+| Experiment | Inference f1_action↑ | Free QA | Notes |
+|---|---|---|---|
+| 指示文あり (202605042259) | 0.8622 (n=15) ※ | ほぼ空文字 or `trap,trap,...` ループ | F1は訓練データ重複で過大評価の可能性大 |
+| 指示文なし (202605050018) | 0.0836 (n=15) | 全クリップ空文字 | 推論スクリプトが指示文を渡すため分布外→当然低い |
+
+※ inference は全クリップからランダム20件サンプルのため訓練データと重複している可能性が高い。Test F1=0.5623 の方が信頼性が高い。
+
+**生成例（指示文あり・正解ケース）**:
+```
+gt:  "pass, trap, through pass, block, clearance"
+gen: "pass, trap, through pass, block, clearance"  ← 完全一致
+
+gt:  "foul received, trap, pass, dribble, tackle"
+gen: "pass, trap, dribble, foul, foul received"    ← 語彙は合うが順番違い(F1=0.8)
+```
+
+**生成例（指示文あり・失敗ケース）**:
+```
+gt:  "pass, shot, goalkeeper save, throw-in, trap"
+gen: "shot, goalkeeper save, pass, throw-in, trap, shot, goalkeeper save, ..."  ← 正解語彙を無限ループ
+```
+
+**考察**:
+- Q-Former はトラッキングデータからアクション語彙をある程度正確に抽出できている（Test F1≈0.56）
+- LLM が「カンマ区切り語彙リスト」フォーマットに過剰適合しているため Free QA に転用できない
+- 指示文なし学習は Test F1≈0.55 で同等だが、推論時に指示文が渡されると完全に崩壊する
+- 次ステップ: instruction dropout で Q-Former を鍛えつつ Free QA にも対応できるようにする
+
+---
+
 ## Phase 2: カリキュラム学習（学習後テスト）
 
 > 設定: checkpoints/202605041201 / LoRA=ON rank=32 / 全ゲーム(5392サンプル, train4314/val539/test539) / 各ステージ5エポック

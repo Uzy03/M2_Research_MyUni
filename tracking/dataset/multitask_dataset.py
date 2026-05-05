@@ -18,6 +18,16 @@ ACTION_NAMES_EN = {
 ACTION_VOCAB = sorted(set(ACTION_NAMES_EN.values()))
 _ACTION_VOCAB_STR = ", ".join(ACTION_VOCAB)
 
+
+def _action_to_sentence(label: str) -> str:
+    actions = [a.strip() for a in label.split(',') if a.strip()]
+    if not actions:
+        return ''
+    if len(actions) == 1:
+        return f'In this soccer sequence, performing {actions[0]}.'
+    return f'In this soccer sequence, performing {", ".join(actions[:-1])} and {actions[-1]}.'
+
+
 TASKS = [
     {
         "name": "action",
@@ -26,6 +36,7 @@ TASKS = [
             f"Use only: {_ACTION_VOCAB_STR}."
         ),
         "short_instruction": f"Soccer actions (comma-separated): {_ACTION_VOCAB_STR}.",
+        "sentence_instruction": "Describe the soccer actions in this tracking sequence.",
         "label_field": "label_action",
         "max_new_tokens": 80,
     },
@@ -76,7 +87,7 @@ _FALLBACK_PRESSURE = "There is low pressure around the ball."
 
 class MultiTaskDataset(Dataset):
     def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False,
-                 allowed_tasks=None):
+                 allowed_tasks=None, use_sentence_format=False):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
@@ -92,6 +103,7 @@ class MultiTaskDataset(Dataset):
             data = [e for e in data if e['game_id'] in allowed]
         self.entries = data
         self.use_short_instruction = use_short_instruction
+        self.use_sentence_format = use_sentence_format
         if allowed_tasks is None:
             self._tasks = TASKS
         else:
@@ -132,9 +144,19 @@ class MultiTaskDataset(Dataset):
         for task in random.sample(self._tasks, len(self._tasks)):
             answer = entry.get(task['label_field'])
             if answer:
-                return feat, msk, task[instr_key], answer, task['name'], seq_id
+                if self.use_sentence_format and task['name'] == 'action':
+                    answer = _action_to_sentence(answer)
+                    instr_key_used = 'sentence_instruction'
+                else:
+                    instr_key_used = instr_key
+                return feat, msk, task[instr_key_used], answer, task['name'], seq_id
 
         # Fallback: self._tasks[0] (allowed_tasks の先頭 = 通常 action)
         fallback_task = self._tasks[0]
         answer = entry.get(fallback_task['label_field']) or ''
-        return feat, msk, fallback_task[instr_key], answer, fallback_task['name'], seq_id
+        if self.use_sentence_format and fallback_task['name'] == 'action' and answer:
+            answer = _action_to_sentence(answer)
+            instr_key_used = 'sentence_instruction'
+        else:
+            instr_key_used = instr_key
+        return feat, msk, fallback_task[instr_key_used], answer, fallback_task['name'], seq_id

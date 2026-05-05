@@ -25,8 +25,8 @@ _ACTION_VOCAB_SET = set(ACTION_VOCAB)
 def compute_f1_action(pred, gt):
     if not gt.strip():
         return None
-    gt_labels   = {w.strip() for w in gt.split(',')   if w.strip() in _ACTION_VOCAB_SET}
-    pred_labels = {w.strip() for w in pred.split(',') if w.strip() in _ACTION_VOCAB_SET}
+    gt_labels   = {w for w in _ACTION_VOCAB_SET if w in gt}
+    pred_labels = {w for w in _ACTION_VOCAB_SET if w in pred}
     if not gt_labels:
         return None
     if not pred_labels:

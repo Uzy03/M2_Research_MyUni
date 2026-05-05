@@ -82,8 +82,8 @@ def compute_rouge_l(pred: str, gt: str):
 def compute_f1_action(pred: str, gt: str):
     if not gt.strip():
         return None
-    gt_labels   = {w.strip() for w in gt.split(',')   if w.strip() in _ACTION_VOCAB_SET}
-    pred_labels = {w.strip() for w in pred.split(',') if w.strip() in _ACTION_VOCAB_SET}
+    gt_labels   = {w for w in _ACTION_VOCAB_SET if w in gt}
+    pred_labels = {w for w in _ACTION_VOCAB_SET if w in pred}
     if not gt_labels:
         return None
     if not pred_labels:
@@ -275,6 +275,8 @@ def main():
                         help="学習・評価するタスク（カンマ区切り、例: action）。省略時は全タスク")
     parser.add_argument('--no_instruction', action='store_true',
                         help='指示文なしでトラッキング埋め込みのみをLLMに渡す')
+    parser.add_argument('--sentence_format', action='store_true',
+                        help='アクションラベルを自然文に変換して学習・評価する')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -285,7 +287,7 @@ def main():
     random.seed(args.seed)
     full_dataset = MultiTaskDataset(args.json_path, args.context_len, max_games=args.max_games,
                                     use_short_instruction=args.short_instruction,
-                                    allowed_tasks=allowed_tasks)
+                                    allowed_tasks=allowed_tasks, use_sentence_format=args.sentence_format)
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
     if args.max_samples > 0:
