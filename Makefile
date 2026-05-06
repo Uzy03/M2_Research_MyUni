@@ -65,6 +65,7 @@ ALLOWED_TASKS     ?= action
 NO_INSTRUCTION    ?= 0
 SENTENCE_FORMAT       ?= 0
 INSTRUCTION_DIVERSE   ?= 0
+ANSWER_DIVERSE        ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -456,6 +457,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(NO_INSTRUCTION)),--no_instruction,) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    $(if $(filter 1,$(INSTRUCTION_DIVERSE)),--instruction_diverse,) \
+	    $(if $(filter 1,$(ANSWER_DIVERSE)),--answer_diverse,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 

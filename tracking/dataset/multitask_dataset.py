@@ -28,6 +28,49 @@ def _action_to_sentence(label: str) -> str:
     return f'In this soccer sequence, performing {", ".join(actions[:-1])} and {actions[-1]}.'
 
 
+_ANSWER_TEMPLATES = [
+    # variant 0（既存フォーマット）
+    lambda actions: (
+        f'In this soccer sequence, performing {actions[0]}.'
+        if len(actions) == 1
+        else f'In this soccer sequence, performing {", ".join(actions[:-1])} and {actions[-1]}.'
+    ),
+    # variant 1
+    lambda actions: (
+        f'The action observed is: {actions[0]}.'
+        if len(actions) == 1
+        else f'The actions observed are: {", ".join(actions)}.'
+    ),
+    # variant 2
+    lambda actions: (
+        f'{actions[0].capitalize()} was performed in this sequence.'
+        if len(actions) == 1
+        else f'{", ".join(a.capitalize() for a in actions[:-1])} and {actions[-1].capitalize()} were performed.'
+    ),
+    # variant 3
+    lambda actions: (
+        f'This sequence shows {actions[0]}.'
+        if len(actions) == 1
+        else f'This sequence shows {" followed by ".join(actions)}.'
+    ),
+    # variant 4
+    lambda actions: (
+        f'The players executed {actions[0]}.'
+        if len(actions) == 1
+        else f'The players executed {" and ".join(actions)}.'
+    ),
+    # variant 5
+    lambda actions: f'Soccer actions: {" ".join(actions)}.'
+]
+
+
+def _action_to_sentence_variant(label: str, variant: int = 0) -> str:
+    actions = [a.strip() for a in label.split(',') if a.strip()]
+    if not actions:
+        return ''
+    return _ANSWER_TEMPLATES[variant % len(_ANSWER_TEMPLATES)](actions)
+
+
 TASKS = [
     {
         "name": "action",
@@ -95,7 +138,8 @@ _FALLBACK_PRESSURE = "There is low pressure around the ball."
 
 class MultiTaskDataset(Dataset):
     def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False,
-                 allowed_tasks=None, use_sentence_format=False, use_instruction_diverse=False):
+                 allowed_tasks=None, use_sentence_format=False, use_instruction_diverse=False,
+                 use_answer_diverse=False):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
@@ -113,6 +157,7 @@ class MultiTaskDataset(Dataset):
         self.use_short_instruction = use_short_instruction
         self.use_sentence_format = use_sentence_format
         self.use_instruction_diverse = use_instruction_diverse
+        self.use_answer_diverse = use_answer_diverse
         if allowed_tasks is None:
             self._tasks = TASKS
         else:
@@ -154,7 +199,11 @@ class MultiTaskDataset(Dataset):
             answer = entry.get(task['label_field'])
             if answer:
                 if self.use_sentence_format and task['name'] == 'action':
-                    answer = _action_to_sentence(answer)
+                    if self.use_answer_diverse:
+                        variant = random.randint(0, len(_ANSWER_TEMPLATES) - 1)
+                        answer = _action_to_sentence_variant(answer, variant)
+                    else:
+                        answer = _action_to_sentence(answer)
                     if self.use_instruction_diverse and 'instruction_variants' in task:
                         instruction = random.choice(task['instruction_variants'])
                         return feat, msk, instruction, answer, task['name'], seq_id
@@ -167,7 +216,11 @@ class MultiTaskDataset(Dataset):
         fallback_task = self._tasks[0]
         answer = entry.get(fallback_task['label_field']) or ''
         if self.use_sentence_format and fallback_task['name'] == 'action' and answer:
-            answer = _action_to_sentence(answer)
+            if self.use_answer_diverse:
+                variant = random.randint(0, len(_ANSWER_TEMPLATES) - 1)
+                answer = _action_to_sentence_variant(answer, variant)
+            else:
+                answer = _action_to_sentence(answer)
             if self.use_instruction_diverse and 'instruction_variants' in fallback_task:
                 instruction = random.choice(fallback_task['instruction_variants'])
                 return feat, msk, instruction, answer, fallback_task['name'], seq_id

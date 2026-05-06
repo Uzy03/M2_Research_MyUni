@@ -568,6 +568,33 @@ instruction: "List the soccer actions occurring in this tracking sequence in chr
 | rank=8 + 多様化なし | 0.7212 | mostly echo | LoRA が指示文暗記に誘導 |
 | rank=8 + 多様化 | 0.5604 | 全件崩壊 | LoRA + 多様化の同時学習が小データ5エポックで過負荷 |
 
+---
+
+## Phase 4: 指示文内容理解テスト・No LoRA + Instruction Diversification (202605061813)
+
+> 設定: SENTENCE_FORMAT=1 / INSTRUCTION_DIVERSE=1 / LoRA なし
+
+| 指示文 | 非空出力 | 内容正解 | 生成例 |
+|---|---|---|---|
+| formation | 0/20 | 0/20 | 全件空文字（沈黙） |
+| commentary | 20/20 | 0/20 | `"In this soccer sequence, performing X."` テンプレート固定 |
+| first action | 3/20 | 1/20 | 1件 `"The first action that occurs in this soccer sequence is trap."` ← 指示内容を理解！ |
+
+**No LoRA + 多様化 vs rank=4（多様化なし）の Phase 4 比較**:
+
+| 指示文 | No LoRA + 多様化なし | No LoRA + 多様化 | rank=4 多様化なし |
+|---|---|---|---|
+| formation | 5/20・テンプレート混入 | **0/20（悪化）** | **20/20・formation 形式** |
+| commentary | 20/20・テンプレート固定 | 20/20・テンプレート固定 | 20/20・commentary 形式を試みる |
+| first action | 2/20・テンプレート | 3/20・1件内容正解 | **20/20・単語1つ回答** |
+
+**考察**:
+- 指示文多様化は「多様な指示に対して何かを出力する」能力を向上させたが、「出力フォーマットを指示内容に合わせる」能力は向上しなかった
+- 多様化した指示文がすべて「アクションを答えて」系のため、モデルはどの指示に対してもアクション記述で答えることを学習した
+- フォーマット切替（formation → formation 形式）には LoRA による LLM 側の fine-tune が必要
+- **first action で 1 件のみ内容正解**（"The first action that occurs in this soccer sequence is trap."）→ 微弱だが指示内容理解の萌芽
+- **次ステップ**: rank=4 + 指示文多様化（形式切替 × prefix 活用の両立を狙う）
+
 **総合結論**: **No LoRA + Instruction Diversification が最良構成**
 - Test F1=0.7345（全実験最高）
 - 学習時未使用の指示文（qa_action.json）に対しても全20件で正常な自然文生成
