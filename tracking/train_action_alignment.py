@@ -157,6 +157,7 @@ def run_curriculum_training(args, model, full_dataset_all,
         stage_dataset = MultiTaskDataset(
             args.json_path, context_len=args.context_len, max_games=args.max_games,
             use_short_instruction=args.short_instruction, allowed_tasks=task_names,
+            use_instruction_diverse=args.instruction_diverse,
         )
         stage_train = Subset(stage_dataset, train_indices)
         stage_val   = Subset(stage_dataset, val_indices)
@@ -277,6 +278,8 @@ def main():
                         help='指示文なしでトラッキング埋め込みのみをLLMに渡す')
     parser.add_argument('--sentence_format', action='store_true',
                         help='アクションラベルを自然文に変換して学習・評価する')
+    parser.add_argument('--instruction_diverse', action='store_true',
+                        help='アクション指示文を複数バリエーションからランダムサンプリングする')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -287,7 +290,8 @@ def main():
     random.seed(args.seed)
     full_dataset = MultiTaskDataset(args.json_path, args.context_len, max_games=args.max_games,
                                     use_short_instruction=args.short_instruction,
-                                    allowed_tasks=allowed_tasks, use_sentence_format=args.sentence_format)
+                                    allowed_tasks=allowed_tasks, use_sentence_format=args.sentence_format,
+                                    use_instruction_diverse=args.instruction_diverse)
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
     if args.max_samples > 0:

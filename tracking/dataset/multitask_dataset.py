@@ -37,6 +37,14 @@ TASKS = [
         ),
         "short_instruction": f"Soccer actions (comma-separated): {_ACTION_VOCAB_STR}.",
         "sentence_instruction": "Describe the soccer actions in this tracking sequence.",
+        "instruction_variants": [
+            'Describe the soccer actions in this tracking sequence.',
+            'What actions are taking place in this soccer sequence?',
+            'What is happening on the pitch in this sequence?',
+            'Identify the actions occurring in this soccer tracking data.',
+            'Analyze the play sequence and describe the actions.',
+            'What soccer actions can be observed in this sequence?',
+        ],
         "label_field": "label_action",
         "max_new_tokens": 80,
     },
@@ -87,7 +95,7 @@ _FALLBACK_PRESSURE = "There is low pressure around the ball."
 
 class MultiTaskDataset(Dataset):
     def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False,
-                 allowed_tasks=None, use_sentence_format=False):
+                 allowed_tasks=None, use_sentence_format=False, use_instruction_diverse=False):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
@@ -104,6 +112,7 @@ class MultiTaskDataset(Dataset):
         self.entries = data
         self.use_short_instruction = use_short_instruction
         self.use_sentence_format = use_sentence_format
+        self.use_instruction_diverse = use_instruction_diverse
         if allowed_tasks is None:
             self._tasks = TASKS
         else:
@@ -146,6 +155,9 @@ class MultiTaskDataset(Dataset):
             if answer:
                 if self.use_sentence_format and task['name'] == 'action':
                     answer = _action_to_sentence(answer)
+                    if self.use_instruction_diverse and 'instruction_variants' in task:
+                        instruction = random.choice(task['instruction_variants'])
+                        return feat, msk, instruction, answer, task['name'], seq_id
                     instr_key_used = 'sentence_instruction'
                 else:
                     instr_key_used = instr_key
@@ -156,6 +168,9 @@ class MultiTaskDataset(Dataset):
         answer = entry.get(fallback_task['label_field']) or ''
         if self.use_sentence_format and fallback_task['name'] == 'action' and answer:
             answer = _action_to_sentence(answer)
+            if self.use_instruction_diverse and 'instruction_variants' in fallback_task:
+                instruction = random.choice(fallback_task['instruction_variants'])
+                return feat, msk, instruction, answer, fallback_task['name'], seq_id
             instr_key_used = 'sentence_instruction'
         else:
             instr_key_used = instr_key

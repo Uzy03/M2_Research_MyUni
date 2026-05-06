@@ -168,6 +168,45 @@ gen: "In this soccer sequence, performing foul received, trap and pass."
 
 ---
 
+## Phase 2: 自然文ターゲット・LoRA rank=4（学習後テスト）
+
+> 設定: LoRA=ON rank=4 / action タスクのみ / 5ゲーム / 10エポック / 自然文ターゲット / 指示文あり
+
+| Experiment | best_val (epoch) | Test f1_action↑ | Notes |
+|---|---|---|---|
+| 自然文 + LoRA rank=4 (202605060027) | 0.4007 (ep7) | **0.6894** | ep8以降 val 急上昇（0.52）→ 過学習 |
+
+> **比較**: LoRA なし (202605051303) Test F1=0.7166 → LoRA rank=4 で -0.027 低下
+
+---
+
+## Phase 3: 自然文ターゲット・LoRA rank=4 推論
+
+> 設定: 20clips / SENTENCE_FORMAT=1 / free_config=qa_action.json（学習指示文と異なる）  
+> 学習指示文: `"Describe the soccer actions in this tracking sequence."` (sentence_instruction)  
+> 推論指示文: `"List the soccer actions occurring in this tracking sequence in chronological order."` (qa_action.json)
+
+| Experiment | Inference f1_action↑ | Free QA | Notes |
+|---|---|---|---|
+| 自然文 + LoRA rank=4 (202605060027) | 0.1711 (n=15) | 指示文 echo・番号付きリスト・幻覚生成 | LoRA なし (0.8371) から大幅低下 |
+
+**Free QA 生成例（LoRA rank=4）**:
+```
+gen: "List the soccer actions occurring in this tracking sequence in chronological or..."  ← 指示文をそのまま echo
+gen: "Here are the results. 1. The first action. 2. The second action. 3. The third a..."  ← プレースホルダー
+gen: "1. 2. 3. 4. 5. 6. 7. 8. 9. 10. 11"                                                  ← 番号のみ
+gen: "1. Kick-off 2. Pass 3. Tackle 4. Foul 5. Offside 6. Backpass 7."                   ← LLM 事前知識による幻覚
+gen: "1. Pass (player passes the ball to a teammate) 2. Dribble (p..."                    ← LLM 事前知識による幻覚
+```
+
+**考察**:
+- LoRA で LLM の応答能力が上がり「番号付きリスト」等の指示フォーマットには反応できるようになった
+- しかし小データ（5ゲーム）では Q-Former 特徴量を使うより LLM の事前知識で答える方が loss が下がりやすく、トラッキング埋め込みを無視した幻覚生成が発生
+- LoRA なしでは学習分布外の指示文に対して「沈黙」で対応したが、LoRA ありでは「echo」で対応 → 指示文への反応力は上がったが有害な方向に作用
+- **結論**: LoRA rank=4 でも 5ゲームの小データでは過学習・幻覚生成が避けられない。LoRA なしの方が安定して高品質な出力を示す
+
+---
+
 ## Phase 4: Zero-shot スタイル汎化テスト
 
 > 設定: 20clips / SENTENCE_FORMAT=1 / free_config=configs/qa_commentary.json  
@@ -214,10 +253,114 @@ gen: "In this soccer sequence, performing corner kick and shot."
 - 指示文の単語（"formation", "attacking team"）がアクション語彙として誤認されてテンプレートに埋め込まれるケースが発生
 - **指示文トークンの役割**: 「何かを生成すべき」というトリガーとして機能しているが、内容の解釈には使われていない
 
-**3実験の比較まとめ**:
-- commentary 指示 → 全クリップで学習テンプレートを生成（スタイル無視）
-- formation 指示 → 15/20クリップが空文字、残りは指示単語の誤流用
-- 共通の結論: **Q-Former の出力はアクション抽出のみに特化しており、LLM は指示文内容ではなくトラッキング埋め込みのパターンにのみ反応している**
+---
+
+## Phase 4: 指示文内容理解テスト②（最初のアクションのみ）
+
+> 設定: 202605051303/phase4 / SENTENCE_FORMAT=1 / free_config=configs/qa_first_action.json  
+> 指示文: `"What is the first action that occurs in this soccer sequence? Answer with a single action word only."`  
+> ※ `--tasks none` により f1_action 評価なし（phase3 で計測済みのため不要）
+
+**生成結果**:
+```
+[18/20クリップ] → 空文字
+[1/20クリップ] → "In this soccer sequence, answering a shot."   ← "Answer" → "answering" に変化してテンプレートに混入
+[1/20クリップ] → "In this soccer sequence, performing pass and trap."  ← 複数アクション（first only 指示を無視）
+```
+
+**単一アクション語だけを返したクリップはゼロ。**
+
+**Phase 4 全実験の比較まとめ（LoRA なし）**:
+
+| 指示文 | 非空出力 | 内容正解 | 考察 |
+|---|---|---|---|
+| commentary（同ドメイン・スタイル変更） | 20/20 | 0/20 | 訓練分布に近い → テンプレートをそのまま出力 |
+| first action only（同ドメイン・数量制限） | 2/20 | 0/20 | "Answer" が動詞として漏れ出し |
+| formation（異ドメイン） | 5/20 | 0/20 | "formation" が名詞として漏れ出し |
+
+**総合結論（LoRA なし）: モデルは指示文の内容を理解していない**
+- 指示文が訓練分布に近いほど出力が多く、遠いほど空文字になる
+- LLM は指示文の意味ではなく**テンプレートパターンとの類似度**で出力するかを決めている
+- Q-Former の出力はアクション抽出のみに特化しており、指示文内容への追従は不可能
+
+---
+
+## Phase 4: 指示文内容理解テスト・LoRA rank=4（フォーメーション質問）
+
+> 設定: 202605060027/phase4 / SENTENCE_FORMAT=1 / free_config=configs/qa_formation.json
+
+**生成結果**:
+```
+[2023102106_0937] "The attacking team is using a 4-3-3 formation. The attacking team is using a..."
+[2023102002_0204] "The attacking team is using a 4-3-3 formation. In this sequence, the attacking..."
+[2023102003_1044] "The attacking team is using the 4-3-3 formation. Answer: The attacking team is..."
+[2023102003_0866] "The attacking team is using the 4-3-3 formation. Answer: 4-3..."
+[2023102003_0181] "The attacking team is using a 4-4-2 formation, which means they are playing wit..."
+[2023102106_0166] "The attacking team is using the formation 4-4-2."
+← 残り14クリップは指示文 echo または "4-4-2, 4-3-3, or..." と例示をそのまま出力
+```
+
+**LoRA なし vs LoRA rank=4 比較（formation 質問）**:
+
+| | LoRA なし (202605051303) | LoRA rank=4 (202605060027) |
+|---|---|---|
+| 非空出力 | 5/20 | **20/20** |
+| formation 形式の回答 | 0/20 | **6/20以上** |
+| 生成例 | `"In this soccer sequence, formation and pass."` | `"The attacking team is using a 4-3-3 formation."` |
+
+**考察**:
+- LoRA によって「指示文内容を読んで回答形式を変える」能力が明確に向上した
+- フォーメーション形式（`"4-3-3"`, `"4-4-2"`）の回答が複数クリップで出現 → 指示文を読んでいる証拠
+- ただし回答内容は LLM の事前知識による幻覚（トラッキングデータから導出していない）
+
+---
+
+## Phase 4: 指示文スタイル汎化テスト・LoRA rank=4（commentary）
+
+> 設定: 202605060027/phase4 / SENTENCE_FORMAT=1 / free_config=configs/qa_commentary.json
+
+**生成結果（抜粋）**:
+```
+"And we're off! The play is 'Soccer Sequence' and we're going to describe it in..."  ← commentary 形式
+"AND WE'RE OFF..." ← commentary 形式
+"And here comes the pass, straight to Johnson! He's got the ball and he's makin..."  ← commentary 形式（実況風）
+"The sequence starts with a pass from the goalkeeper to a midfielder, who then p..."  ← narrative 形式
+"This is a test. This is a test. This is a test..."                                   ← 繰り返しループ
+"The sequence is: 1-2-3, 4-5-6, ..."                                                  ← 数列（崩壊）
+```
+
+---
+
+## Phase 4: 指示文内容理解テスト・LoRA rank=4（最初のアクションのみ）
+
+> 設定: 202605060027/phase4 / SENTENCE_FORMAT=1 / free_config=configs/qa_first_action.json
+
+**生成結果（抜粋）**:
+```
+"Kick"
+"Kickoff"
+"The first action that occurs in this soccer sequence is: KICK."
+"(e.g. "Kick") Kick"
+"The first action that occurs in this soccer sequence is "Pass"."
+← 残りは指示文 echo または "What is the second action..." と後続質問を自己生成
+```
+
+- **20/20 クリップで非空出力**（LoRA なしは 2/20）
+- **単一アクション語での回答が多数**（LoRA なし は 0/20）→ 「単語1つで答えよ」という数量指示を理解
+- ただし全クリップが `"Kick"` / `"Kickoff"` → LLM 事前知識（サッカー開始 = キックオフ）による幻覚。トラッキングデータ不使用
+
+**LoRA なし vs LoRA rank=4 総合比較（Phase 4 全指示文）**:
+
+| 指示文 | LoRA なし | LoRA rank=4 |
+|---|---|---|
+| commentary | 20/20・形式固定（training template） | 20/20・**commentary 形式を試みる** |
+| formation | 5/20・形式誤り | 20/20・**formation 形式で回答** |
+| first action only | 2/20・数量指示を無視 | 20/20・**単語1つで回答** |
+
+**総合結論**:
+- **LoRA なし**: トラッキングデータを正確に使う・指示文スタイル/内容を無視（アクション Test F1=0.7166）
+- **LoRA rank=4**: 指示文を読んでスタイル・形式を変える・トラッキングデータを無視して LLM 事前知識で幻覚（アクション Test F1=0.6894）
+- 両者のトレードオフが明確。「Q-Former 特徴量の活用」と「指示文追従」を同時に実現するには小データでは不十分であり、より多くのデータまたはアーキテクチャ上の工夫が必要
 
 ---
 
@@ -296,3 +439,73 @@ gen: "In this soccer sequence, performing corner kick and shot."
 - action: `. 1\nList the...` や番号付きリストを生成 → F1 = 0.00（語彙形式が不一致）
 - possession: 正答フレーズを繰り返す or home/away を交互に出力するサンプルあり
 - zone / pressure: `Where on the field...` や `Describe the pressing...` を先頭に echo してから回答
+
+---
+
+## Phase 2: LoRA rank アブレーション（自然文・5ゲーム）
+
+> 設定: 自然文ターゲット / action タスクのみ / 5ゲーム(5392サンプル) / 10エポック / SENTENCE_FORMAT=1  
+> LoRA rank=2: 202605061305 / LoRA rank=8: 202605061327
+
+| Experiment | LoRA rank | best_val (epoch) | Test f1_action↑ | Notes |
+|---|---|---|---|---|
+| 自然文 + LoRA なし (202605051303) | — | 0.3885 (ep7) | **0.7166** | 比較ベースライン |
+| 自然文 + LoRA rank=2 (202605061305) | 2 | 0.3845 (ep8) | **0.6207** | val は ep3以降不安定・上下 |
+| 自然文 + LoRA rank=4 (202605060027) | 4 | 0.4007 (ep7) | **0.6894** | ep8以降 val 急上昇 |
+| 自然文 + LoRA rank=8 (202605061327) | 8 | 0.3756 (ep7) | **0.7212** | 全実験中最高 F1 |
+
+**LoRA rank 別 val 推移（rank=8 が最も安定）**:
+
+| Epoch | rank=2 val | rank=4 val | rank=8 val |
+|---|---|---|---|
+| 1 | 0.4684 | 0.4975 | 0.4783 |
+| 3 | 0.4394 | 0.4681 | 0.4488 |
+| 5 | 0.4564 | 0.4643 | 0.4170 |
+| 7 | 0.3942 ← best | 0.4007 ← best | **0.3756 ← best** |
+| 9 | 0.4020 | (過学習) | 0.4437 |
+| 10 | 0.4234 | — | 0.5052 |
+
+---
+
+## Phase 3: LoRA rank アブレーション推論（自然文・5ゲーム）
+
+> 設定: 20clips / SENTENCE_FORMAT=1 / free_config=qa_action.json（学習指示文と異なる長い指示文）  
+> ※ phase3 f1_action は SENTENCE_FORMAT=1 時は参考値（学習指示文と不一致のため低め）
+
+| Experiment | LoRA rank | Inference f1_action↑ | Free QA 品質 |
+|---|---|---|---|
+| LoRA なし (202605051303) | — | 0.8371 | 全20クリップで自然文生成（スタイル固定） |
+| LoRA rank=2 (202605061305) | 2 | 0.0222 | echo ほぼ全件・ガーベジ多数（`###`・`- - -`・無限ループ） |
+| LoRA rank=4 (202605060027) | 4 | 0.1711 | echo / 番号付きリスト / 幻覚生成 |
+| LoRA rank=8 (202605061327) | 8 | 0.1068 | mostly echo、2-3件で不完全な文章生成 |
+
+**rank=2 Free QA 生成例**（代表的な失敗パターン）:
+```
+[2023102002_0204]  # # # # # # # # # # # # # # # #                ← ガーベジ
+[2023102003_1044]  [List] [List] [List] [List] [List] ...          ← ループ
+[2023102002_0839]  ................................                  ← ドット
+[2023102002_0712]  In this order. In this order. In this order...  ← ループ
+[2023102106_0630]  List the soccer actions... in chronological or  ← echo
+```
+
+**rank=8 Free QA 生成例**（rank=2 より若干改善、ただし mostly echo）:
+```
+[2023102002_0912]  1. The soccer player kicks the ball. 2. The soccer player runs...  ← 幻覚生成（LLM 事前知識）
+[2023102002_0204]  The actions are: 1. Tracking 2. Sequencing 3. Actions...          ← 指示文語彙を分解
+[2023102002_0217]  Soccer actions include dribbling, passing, shooting...             ← 幻覚生成
+← 残り17件はほぼ echo
+```
+
+**LoRA rank アブレーション総合考察**:
+
+| | Test F1 | Free QA | prefix 使用 |
+|---|---|---|---|
+| No LoRA | 0.7166 | テンプレート固定（安定） | **Yes（ただし指示文無視）** |
+| rank=2 | 0.6207 | ガーベジ/echo（最悪） | ほぼなし |
+| rank=4 | 0.6894 | 指示文 echo・幻覚 | なし（LLM 事前知識に依存） |
+| rank=8 | **0.7212** | mostly echo・一部幻覚 | わずかに試みる |
+
+- **rank=2**: パラメータ少なすぎ → LLM の指示文追従能力が引き出せず、かつ Q-Former 特徴量も使えない
+- **rank=4**: パラメータ中程度 → 指示文に反応するが Q-Former 特徴量を無視して幻覚
+- **rank=8**: パラメータ多め → **Test F1 がノー LoRA を上回る（0.7212）**、Free QA はまだ不安定
+- **→ Instruction Diversification のベースには rank=8 が最有力**（最高 F1 かつわずかに生成能力あり）
