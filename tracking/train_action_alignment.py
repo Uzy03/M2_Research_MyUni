@@ -184,7 +184,7 @@ def run_curriculum_training(args, model, full_dataset_all,
                 batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v
                          for k, v in batch.items()}
                 optimizer.zero_grad()
-                loss = model(batch, validating=False)
+                loss = model(batch, validating=False, lambda_align=args.lambda_align)
                 if torch.isnan(loss):
                     continue
                 loss.backward()
@@ -200,7 +200,7 @@ def run_curriculum_training(args, model, full_dataset_all,
                 for batch in val_loader:
                     batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v
                              for k, v in batch.items()}
-                    loss = model(batch, validating=False)
+                    loss = model(batch, validating=False, lambda_align=args.lambda_align)
                     if not torch.isnan(loss):
                         total_val += loss.item()
                         n_val += 1
@@ -283,6 +283,8 @@ def main():
                         help='アクション指示文を複数バリエーションからランダムサンプリングする')
     parser.add_argument('--answer_diverse', action='store_true',
                         help='アクション回答を複数フォーマットからランダムサンプリングする')
+    parser.add_argument('--lambda_align', type=float, default=0.0,
+                        help='Token-Word Alignment loss weight (0.0 = disabled)')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -416,7 +418,7 @@ def main():
             for batch in train_loader:
                 batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
                 optimizer.zero_grad()
-                loss = model(batch, validating=False)
+                loss = model(batch, validating=False, lambda_align=args.lambda_align)
                 if torch.isnan(loss):
                     continue
                 loss.backward()
@@ -432,7 +434,7 @@ def main():
             with torch.no_grad():
                 for batch in val_loader:
                     batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-                    loss = model(batch, validating=False)
+                    loss = model(batch, validating=False, lambda_align=args.lambda_align)
                     if not torch.isnan(loss):
                         total_val += loss.item()
                         n_val_batches += 1

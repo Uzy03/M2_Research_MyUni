@@ -2,6 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 from torch import nn
+import torch.nn.functional as F
 import einops
 from model.matchvoice_model_all_blocks import matchvoice_model_all_blocks, LayerNorm
 from tracking.encoder import TrackingEncoder
@@ -35,6 +36,10 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         # 親クラスの __init__ を呼ぶ
         super().__init__(**kwargs)
         
+        # Alignment loss 用の投影層を追加
+        llm_hidden = self.llama_model.config.hidden_size
+        self.align_proj = nn.Linear(llm_hidden, llm_hidden)
+        
         # visual_encoder を TrackingEncoder で上書き
         out_features = kwargs.get('num_features', 768)
         self.visual_encoder = TrackingEncoder(
@@ -44,7 +49,7 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
             out_features=out_features,
         )
     
-    def forward(self, samples, validating=False):
+    def forward(self, samples, validating=False, lambda_align=0.0):
         """
         Forward pass: TrackingEncoder で処理したトラッキングデータを親クラスの
         Q-Former と LLaMA に渡す。
@@ -127,6 +132,30 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
             video_hidden = video_query_output.last_hidden_state
         
         inputs_llama = self.llama_proj(video_hidden)
+        
+        # Alignment loss（学習時のみ、lambda_align > 0 の場合）
+        align_loss = None
+        if lambda_align > 0.0 and not validating and not self.inference:
+            if self.open_llm_decoder:
+                embed_fn = self.llama_model.base_model.model.model.embed_tokens
+            else:
+                embed_fn = self.llama_model.model.embed_tokens
+
+            # h_prefix: (B, 32, H) → mean → (B, H)
+            h_mean = inputs_llama.float().mean(dim=1)
+            h_proj = self.align_proj(h_mean.to(self.align_proj.weight.dtype))
+
+            # GT caption_text をトークナイズして埋め込み → mean
+            gt_embeds_list = []
+            for text in caption_text:
+                ids = self.tokenizer(text, add_special_tokens=False, return_tensors='pt').input_ids.to(inputs_llama.device)
+                with torch.no_grad():
+                    emb = embed_fn(ids).float().mean(dim=1)  # (1, H)
+                gt_embeds_list.append(emb)
+            gt_embeds = torch.cat(gt_embeds_list, dim=0)  # (B, H)
+
+            align_loss = (1.0 - F.cosine_similarity(h_proj.float(), gt_embeds, dim=-1)).mean()
+        
         if self.inference:
             return self.generate_text(inputs_llama)
         
@@ -158,6 +187,8 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
             )
         sys.stdout = original_stdout
         loss = outputs.loss
+        if align_loss is not None:
+            loss = loss + lambda_align * align_loss
         return loss
 
     def forward_contrastive(self, samples):

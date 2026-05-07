@@ -80,6 +80,43 @@ def pressure_label(npy, mask):
     return "There is low pressure around the ball."
 
 
+def direction_label(npy, mask):
+    """ボールの移動方向ラベルを返す（5クラス）。
+    
+    ボールの最初と最後の有効フレーム間の変位ベクトルで判定。
+    x_norm: 0=左ゴールライン, 1=右ゴールライン
+    y_norm: 0=上タッチライン, 1=下タッチライン
+    """
+    ball_valid = ~mask[:, 0]
+    valid_frames = np.where(ball_valid)[0]
+    if len(valid_frames) < 2:
+        return "The ball has minimal movement in this sequence."
+
+    x_start = float(npy[valid_frames[0],  0, 0])
+    y_start = float(npy[valid_frames[0],  0, 1])
+    x_end   = float(npy[valid_frames[-1], 0, 0])
+    y_end   = float(npy[valid_frames[-1], 0, 1])
+
+    dx = x_end - x_start
+    dy = y_end - y_start
+
+    # 変位が小さければ静止とみなす
+    if abs(dx) < 0.05 and abs(dy) < 0.05:
+        return "The ball has minimal movement in this sequence."
+
+    # 主軸方向を判定
+    if abs(dx) >= abs(dy):
+        if dx > 0:
+            return "The ball is moving toward the right side of the pitch."
+        else:
+            return "The ball is moving toward the left side of the pitch."
+    else:
+        if dy > 0:
+            return "The ball is moving toward the bottom touchline."
+        else:
+            return "The ball is moving toward the top touchline."
+
+
 def main():
     parser = argparse.ArgumentParser(description='Add task labels to clips.json')
     parser.add_argument('--json_path', required=True, help='Path to clips.json')
@@ -98,6 +135,7 @@ def main():
         entry['label_possession'] = possession_label(npy, mask)
         entry['label_zone']      = zone_label(npy, mask)
         entry['label_pressure']  = pressure_label(npy, mask)
+        entry['label_direction'] = direction_label(npy, mask)
 
     with open(json_path, 'w') as f:
         json.dump(clips, f, ensure_ascii=False)

@@ -7,6 +7,28 @@
 
 ---
 
+## 全実験サマリー
+
+> - **Phase 2 F1**: 学習後テストセットでの vocab F1（高いほど良い）
+> - **Phase 3 F1（指示文変更）**: 推論時に学習外指示文（qa_action.json）を使用した vocab F1
+> - **Free QA**: 学習外指示文に対する出力品質（○=正常自然文・指示汎化、△=生成あり・問題あり、×=崩壊・空文字・echo）
+
+| 実験 | LoRA | ep | Phase 2 F1↑ | Phase 3 F1↑ | Free QA | 備考 |
+|---|---|---|---|---|---|---|
+| 指示文なし + 自然文 (202605051310) | なし | 10 | 0.7466 | 0.0000 | × | 推論時に指示文が来ると全件空文字 |
+| 指示文あり + 自然文 (202605051303) | なし | 10 | 0.7166 | 0.8371 | △ | 全件生成・テンプレート固定・指示内容無視 |
+| LoRA rank=2 (202605061305) | 2 | 10 | 0.6207 | 0.0222 | × | ガーベジ・echo・完全崩壊 |
+| LoRA rank=4 (202605060027) | 4 | 10 | 0.6894 | 0.1711 | × | echo・幻覚（LLM 事前知識で回答） |
+| LoRA rank=8 (202605061327) | 8 | 10 | 0.7212 | 0.1068 | × | mostly echo・わずかに生成試みあり |
+| **No LoRA + 指示多様化 (202605061813)** | なし | 5 | **0.7345** | **0.8194** | **○** | **全実験最高・未知指示でも全件自然文生成** |
+| No LoRA + 指示+回答多様化 (202605062134) | なし | 10 | 0.6615 | — | △ | 出力フォーマット多様化・指示内容追従なし |
+| rank=4 + 指示多様化 (202605062135) | 4 | 5 | 0.6384 | — | △ | 指示フォーマット追従・prefix 無視・内容は幻覚 |
+| rank=4 + 指示+回答多様化 (B-0e) | 4 | 20 | — | — | — | 未実施 |
+
+**結論**: No LoRA + Instruction Diversification が現時点最良。LoRA あり／なしのトレードオフ（prefix 活用 vs 指示追従）は多様化を加えても解消されない → Token-Word Alignment（B-3）が本命。
+
+---
+
 ## Phase 1: Trajectory Regression
 
 | Experiment | Games | ADE↓ | Notes |
@@ -600,3 +622,50 @@ instruction: "List the soccer actions occurring in this tracking sequence in chr
 - 学習時未使用の指示文（qa_action.json）に対しても全20件で正常な自然文生成
 - これが「prefix を読んで指示に汎化する」という B-0 の目標を達成した最初の実験
 - LoRA + 多様化の組み合わせは 5 エポック・小データでは過負荷。LoRA を使う場合はエポック数を増やすか、多様化後に LoRA を追加する2段階 fine-tune が必要
+
+---
+
+## Phase 2: 指示文+回答多様化 / rank=4+指示文多様化 アブレーション
+
+> Run 1 (202605062134): No LoRA + INSTRUCTION_DIVERSE=1 + ANSWER_DIVERSE=1 / 10ep  
+> Run 2 (202605062135): LoRA rank=4 + INSTRUCTION_DIVERSE=1 / 5ep
+
+| Experiment | LoRA | ep | Test F1↑ | Phase3 Free QA |
+|---|---|---|---|---|
+| No LoRA + 指示多様化のみ (202605061813) | — | 5 | 0.7345 | 全件自然文（単一フォーマット） |
+| **No LoRA + 指示+回答多様化 (202605062134)** | — | 10 | 0.6615 | **多様なフォーマット混在** |
+| rank=4 + 指示多様化 (202605062135) | 4 | 5 | 0.6384 | mostly echo |
+
+---
+
+## Phase 4: 指示文+回答多様化 / rank=4+指示文多様化 比較
+
+| 指示文 | No LoRA+指示多様化 (202605061813) | No LoRA+指示+回答多様化 (202605062134) | rank=4+指示多様化 (202605062135) |
+|---|---|---|---|
+| formation | 0/20・沈黙 | 6/20・アクション記述のみ | **15/20・"4-3-3"/"4-4-2" 形式** |
+| commentary | 20/20・テンプレート固定 | 20/20・アクション記述のまま | **20/20・commentary 形式を試みる** |
+| first action | 3/20・1件内容正解 | 2/20・アクション列挙 | **20/20・形式は理解（内容は Kickoff 幻覚）** |
+
+**Run 1（No LoRA + 指示+回答多様化）Phase 3 生成例**（多様なフォーマット）:
+```
+"Throw-in, Trap and Pass were performed."          ← variant 2（大文字化）
+"This sequence shows pass followed by trap..."     ← variant 3（シーケンス）
+"Soccer actions: goalkeeper save flick-on."        ← variant 5（キーワード列挙）
+"In this soccer sequence, performing pass..."      ← variant 0（既存）
+```
+
+**Run 2（rank=4 + 指示多様化）Phase 4 生成例**:
+```
+[formation]   "In this soccer sequence, the attacking team is using a 4-3-3 formation."
+[formation]   "The attacking team is using a 4-4-2 formation."
+[commentary]  "Oh, what a beautiful pass! The player has got the ball and is making a run..."
+[commentary]  "And here's the midfield maestro, controlling the tempo of the game..."
+[first_action] "The single action word is 'pass'."  ← 1件のみ prefix 使用の可能性
+[first_action] "The first action that occurs is Kickoff."  ← 大半は幻覚
+```
+
+**考察**:
+- **回答多様化の効果**: Phase 3 で出力フォーマットが多様化した（6バリアントが混在）→ ただし F1 が 0.7345→0.6615 に低下（モデルが「どのフォーマットで答えるべきか」の学習も必要になりコストが増加）
+- **rank=4 + 指示多様化**: 5ep でも formation/commentary/first_action の形式理解が維持された。多様化なし rank=4 と同様の指示追従能力を持ちつつ、prefix を無視する問題は変わらず
+- **根本的なトレードオフ**: No LoRA = prefix 使う・フォーマット切替不可 / LoRA = フォーマット切替できる・prefix 無視、は指示文・回答多様化を加えても解消されない
+- **Token-Word Alignment（Phase B-3）がこのトレードオフを解消する本命**：Q-Former トークンを LLM 意味空間にアラインすることで、LoRA なしでも LLM が prefix を「意味ある情報」として読めるようにする

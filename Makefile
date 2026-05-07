@@ -66,6 +66,7 @@ NO_INSTRUCTION    ?= 0
 SENTENCE_FORMAT       ?= 0
 INSTRUCTION_DIVERSE   ?= 0
 ANSWER_DIVERSE        ?= 0
+LAMBDA_ALIGN          ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -107,7 +108,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         preprocess_sn_tracking preprocess_all_tracking _preprocess_all_tracking \
         verify_sn_tracking train_tracking inference_tracking \
         train_instruction inference_instruction_action \
-        download_soccerreplay preprocess_soccerdata add_task_labels upload_soccerdata \
+        download_soccerreplay preprocess_soccerdata add_task_labels upload_soccerdata sync_soccerdata \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
@@ -408,6 +409,13 @@ upload_soccerdata:
 	        "mkdir -p '$(REMOTE_DIR)/soccerdata_clips' && \
 	         cd '$(REMOTE_DIR)' && tar -xf -"
 
+sync_soccerdata:
+	rsync -avz --progress --partial --ignore-existing \
+	    --exclude='._*' --exclude='.DS_Store' \
+	    -e "ssh -o StrictHostKeyChecking=no -p $(REMOTE_PORT)" \
+	    "$(SOCCERDATA_DIR)/" \
+	    "$(REMOTE):/user/arch/ujihara/SoccerData/"
+
 train_trajectory_regression:
 	mkdir -p $(PHASE1_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory_regression.py \
@@ -458,6 +466,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    $(if $(filter 1,$(INSTRUCTION_DIVERSE)),--instruction_diverse,) \
 	    $(if $(filter 1,$(ANSWER_DIVERSE)),--answer_diverse,) \
+	    $(if $(filter-out 0,$(LAMBDA_ALIGN)),--lambda_align $(LAMBDA_ALIGN),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
