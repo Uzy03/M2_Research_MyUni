@@ -115,7 +115,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         run_pipeline run_pipeline_curriculum \
         train_phase1 run_from_phase2 run_curriculum_from_phase2 \
         train_contrastive_phase2 run_contrastive_from_phase2 \
-        inference_free_qa \
+        inference_free_qa inference_phase4_all \
         check smoke smoke_phase2 clean
 
 build:
@@ -518,6 +518,11 @@ inference_free_qa:
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE4_DIR)/inference.log
+
+inference_phase4_all:
+	$(MAKE) inference_free_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU) QA_CONFIG=configs/qa_formation.json
+	$(MAKE) inference_free_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU) QA_CONFIG=configs/qa_commentary.json
+	$(MAKE) inference_free_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU) QA_CONFIG=configs/qa_first_action.json
 
 run_pipeline:
 	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
