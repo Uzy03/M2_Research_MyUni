@@ -150,7 +150,8 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
                     slot_mean = inputs_llama[:, s*tokens_per_slot:(s+1)*tokens_per_slot, :].float().mean(dim=1)
                     slot_projected = self.slot_proj[s](slot_mean.to(self.slot_proj[s].weight.dtype))
                     gt_embs = []
-                    for row in slot_labels:
+                    valid_indices = []
+                    for i, row in enumerate(slot_labels):
                         text = row[s] if row[s] else ''
                         if not text:
                             continue
@@ -158,9 +159,11 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
                         with torch.no_grad():
                             emb = embed_fn(ids).float().mean(dim=1)
                         gt_embs.append(emb)
+                        valid_indices.append(i)
                     if gt_embs:
                         gt_tensor = torch.cat(gt_embs, dim=0)
-                        slot_loss = slot_loss + (1.0 - F.cosine_similarity(slot_projected.float(), gt_tensor, dim=-1)).mean()
+                        valid_proj = slot_projected[valid_indices].float()
+                        slot_loss = slot_loss + (1.0 - F.cosine_similarity(valid_proj, gt_tensor, dim=-1)).mean()
         
         # Alignment loss（学習時のみ、lambda_align > 0 の場合）
         align_loss = None
