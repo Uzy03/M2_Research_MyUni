@@ -189,6 +189,7 @@ def run_curriculum_training(args, model, full_dataset_all,
                 if torch.isnan(loss):
                     continue
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
                 total_train += loss.item()
                 n_train += 1
@@ -429,6 +430,7 @@ def main():
                 if torch.isnan(loss):
                     continue
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
                 total_train += loss.item()
             avg_train = total_train / len(train_loader)
