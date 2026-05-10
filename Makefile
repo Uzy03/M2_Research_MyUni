@@ -67,6 +67,7 @@ SENTENCE_FORMAT       ?= 0
 INSTRUCTION_DIVERSE   ?= 0
 ANSWER_DIVERSE        ?= 0
 LAMBDA_ALIGN          ?= 0
+LAMBDA_SLOT           ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -467,6 +468,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(INSTRUCTION_DIVERSE)),--instruction_diverse,) \
 	    $(if $(filter 1,$(ANSWER_DIVERSE)),--answer_diverse,) \
 	    $(if $(filter-out 0,$(LAMBDA_ALIGN)),--lambda_align $(LAMBDA_ALIGN),) \
+	    $(if $(filter-out 0,$(LAMBDA_SLOT)),--lambda_slot $(LAMBDA_SLOT),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 

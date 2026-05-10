@@ -206,11 +206,27 @@ class MultiTaskDataset(Dataset):
                         answer = _action_to_sentence(answer)
                     if self.use_instruction_diverse and 'instruction_variants' in task:
                         instruction = random.choice(task['instruction_variants'])
-                        return feat, msk, instruction, answer, task['name'], seq_id
+                        raw_action = entry.get('label_action') or ''
+                        if self.use_sentence_format and raw_action:
+                            raw_action = _action_to_sentence(raw_action)
+                        slot_labels = [
+                            raw_action,
+                            entry.get('label_zone') or '',
+                            entry.get('label_pressure') or '',
+                        ]
+                        return feat, msk, instruction, answer, task['name'], seq_id, slot_labels
                     instr_key_used = 'sentence_instruction'
                 else:
                     instr_key_used = instr_key
-                return feat, msk, task[instr_key_used], answer, task['name'], seq_id
+                raw_action = entry.get('label_action') or ''
+                if self.use_sentence_format and raw_action:
+                    raw_action = _action_to_sentence(raw_action)
+                slot_labels = [
+                    raw_action,
+                    entry.get('label_zone') or '',
+                    entry.get('label_pressure') or '',
+                ]
+                return feat, msk, task[instr_key_used], answer, task['name'], seq_id, slot_labels
 
         # Fallback: self._tasks[0] (allowed_tasks の先頭 = 通常 action)
         fallback_task = self._tasks[0]
@@ -223,8 +239,24 @@ class MultiTaskDataset(Dataset):
                 answer = _action_to_sentence(answer)
             if self.use_instruction_diverse and 'instruction_variants' in fallback_task:
                 instruction = random.choice(fallback_task['instruction_variants'])
-                return feat, msk, instruction, answer, fallback_task['name'], seq_id
+                raw_action = entry.get('label_action') or ''
+                if self.use_sentence_format and raw_action:
+                    raw_action = _action_to_sentence(raw_action)
+                slot_labels = [
+                    raw_action,
+                    entry.get('label_zone') or '',
+                    entry.get('label_pressure') or '',
+                ]
+                return feat, msk, instruction, answer, fallback_task['name'], seq_id, slot_labels
             instr_key_used = 'sentence_instruction'
         else:
             instr_key_used = instr_key
-        return feat, msk, fallback_task[instr_key_used], answer, fallback_task['name'], seq_id
+        raw_action = entry.get('label_action') or ''
+        if self.use_sentence_format and raw_action:
+            raw_action = _action_to_sentence(raw_action)
+        slot_labels = [
+            raw_action,
+            entry.get('label_zone') or '',
+            entry.get('label_pressure') or '',
+        ]
+        return feat, msk, fallback_task[instr_key_used], answer, fallback_task['name'], seq_id, slot_labels

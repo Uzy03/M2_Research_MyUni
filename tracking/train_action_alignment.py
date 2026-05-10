@@ -27,7 +27,7 @@ STAGE_TASKS = [
 def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=None,
                     use_chat_template=False, asst_header_ids=None, no_instruction=False):
     def collate_fn(batch):
-        feats, masks, instructions, target_texts, task_names, seq_ids = zip(*batch)
+        feats, masks, instructions, target_texts, task_names, seq_ids, slot_labels_list = zip(*batch)
         tracking = torch.stack(feats)
         mask_tensor = torch.stack(masks)
 
@@ -65,6 +65,7 @@ def make_collate_fn(tokenizer, max_length, use_ans_token=False, ans_token_id=Non
             "video_path":     list(seq_ids),
             "instruction":    list(instructions),
             "task_name":      list(task_names),
+            "slot_labels":    list(slot_labels_list),
         }
     return collate_fn
 
@@ -184,7 +185,7 @@ def run_curriculum_training(args, model, full_dataset_all,
                 batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v
                          for k, v in batch.items()}
                 optimizer.zero_grad()
-                loss = model(batch, validating=False, lambda_align=args.lambda_align)
+                loss = model(batch, validating=False, lambda_align=args.lambda_align, lambda_slot=args.lambda_slot)
                 if torch.isnan(loss):
                     continue
                 loss.backward()
@@ -200,7 +201,7 @@ def run_curriculum_training(args, model, full_dataset_all,
                 for batch in val_loader:
                     batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v
                              for k, v in batch.items()}
-                    loss = model(batch, validating=False, lambda_align=args.lambda_align)
+                    loss = model(batch, validating=False, lambda_align=args.lambda_align, lambda_slot=args.lambda_slot)
                     if not torch.isnan(loss):
                         total_val += loss.item()
                         n_val += 1
@@ -285,9 +286,15 @@ def main():
                         help='アクション回答を複数フォーマットからランダムサンプリングする')
     parser.add_argument('--lambda_align', type=float, default=0.0,
                         help='Token-Word Alignment loss weight (0.0 = disabled)')
+    parser.add_argument('--lambda_slot', type=float, default=0.0,
+                        help='per-slot alignment loss の係数（B-2）')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
+
+    qformer_heads = args.qformer_heads
+    if args.lambda_slot > 0.0 and qformer_heads < 4:
+        qformer_heads = 4
 
     print("=" * 60)
     print("Step 1: データセット読み込み・train/val/test 分割")
@@ -330,7 +337,7 @@ def main():
         open_llm_decoder=args.open_lora,
         llm_lora_rank=args.lora_rank,
         use_ans_token=args.use_ans_token,
-        qformer_heads=args.qformer_heads,
+        qformer_heads=qformer_heads,
         use_chat_template=args.use_chat_template,
         num_players=23,
         in_features=5,
@@ -418,7 +425,7 @@ def main():
             for batch in train_loader:
                 batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
                 optimizer.zero_grad()
-                loss = model(batch, validating=False, lambda_align=args.lambda_align)
+                loss = model(batch, validating=False, lambda_align=args.lambda_align, lambda_slot=args.lambda_slot)
                 if torch.isnan(loss):
                     continue
                 loss.backward()
@@ -434,7 +441,7 @@ def main():
             with torch.no_grad():
                 for batch in val_loader:
                     batch = {k: v.to(args.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-                    loss = model(batch, validating=False, lambda_align=args.lambda_align)
+                    loss = model(batch, validating=False, lambda_align=args.lambda_align, lambda_slot=args.lambda_slot)
                     if not torch.isnan(loss):
                         total_val += loss.item()
                         n_val_batches += 1
