@@ -84,7 +84,6 @@ CAPTION_DIR      ?= SoccerNet/caption-2023/england_epl/2014-2015/2015-02-21 - 18
 TRACKING_OUT     := tracking_clips_sn
 TRACKING_SPLIT   := train
 
-SOCCERDATA_DIR    := /Users/ujihara/m2_研究/SoccerData
 SOCCERDATA_CONFIG := fps1_sec30_onball_step5s
 SOCCERDATA_OUT    := soccerdata_clips
 SOCCERDATA_MAX_GAMES ?= 0
