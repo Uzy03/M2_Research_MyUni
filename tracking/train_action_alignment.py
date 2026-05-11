@@ -111,7 +111,7 @@ def evaluate_metrics(model, dataset, device, max_eval=200, seed=0, allowed_tasks
     with torch.no_grad():
         for idx in indices:
             item = dataset[idx]
-            feat, msk, instruction, answer, task_name, seq_id = item
+            feat, msk, instruction, answer, task_name, seq_id, _ = item
             if task_name not in task_scores:
                 continue
             model.instruction = '' if no_instruction else instruction
@@ -289,6 +289,8 @@ def main():
                         help='Token-Word Alignment loss weight (0.0 = disabled)')
     parser.add_argument('--lambda_slot', type=float, default=0.0,
                         help='per-slot alignment loss の係数（B-2）')
+    parser.add_argument('--test_only', action='store_true',
+                        help='学習をスキップして --out_ckpt からロードしてテスト評価のみ実行')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -397,7 +399,10 @@ def main():
     print(f"Train: {len(train_loader)} batches  Val: {len(val_loader)} batches")
 
     print("\n" + "=" * 60)
-    if args.curriculum_stages is not None:
+    if args.test_only:
+        print("Step 5: スキップ（--test_only）")
+        print("=" * 60)
+    elif args.curriculum_stages is not None:
         print("Step 5: カリキュラム訓練")
         print("=" * 60)
         stage_epochs = [int(x) for x in args.curriculum_stages.split(",")]

@@ -492,6 +492,26 @@ run_curriculum:
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/curriculum.log
 
+test_phase2:
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
+	    --json_path $(SD_JSON) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(ACTION_CKPT) \
+	    --context_len $(SD_CONTEXT) \
+	    --batch_size $(BATCH_PHASE2) \
+	    --max_games $(MAX_GAMES) \
+	    $(if $(filter 1,$(OPEN_LORA)),--open_lora,) \
+	    --lora_rank $(LORA_RANK) \
+	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
+	    --qformer_heads $(QFORMER_HEADS) \
+	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
+	    $(if $(filter 1,$(INSTRUCTION_DIVERSE)),--instruction_diverse,) \
+	    $(if $(filter-out 0,$(LAMBDA_SLOT)),--lambda_slot $(LAMBDA_SLOT),) \
+	    $(if $(ALLOWED_TASKS),--allowed_tasks $(ALLOWED_TASKS),) \
+	    --test_only \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE2_DIR)/test.log
+
 inference_soccer_qa:
 	mkdir -p $(PHASE3_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
@@ -624,6 +644,8 @@ smoke:
 	    --qformer_heads $(QFORMER_HEADS) \
 	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
+	    --sentence_format --instruction_diverse \
+	    --lambda_slot 0.1 \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(SMOKE_P2)/smoke.log
 	@echo "=== smoke: Phase 3 ==="
