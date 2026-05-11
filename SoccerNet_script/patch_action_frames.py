@@ -53,12 +53,20 @@ def main():
             print(f"WARNING: failed to read {play_csv_path}: {e}")
             entry['action_sequence_frames'] = []
             continue
+        # 優先順位: 完全一致 > 先頭一致 > 部分一致（B1_/B2_/A1_/A2_ などの派生列を避ける）
         frame_col = None
         action_col = None
         for col in df.columns:
-            if 'フレーム' in col or 'Frame' in col:
+            if col in ('フレーム番号', 'FrameNumber', 'Frame'):
                 frame_col = col
-            if 'アクション' in col or 'Action' in col:
+                break
+            if frame_col is None and ('フレーム' in col or 'Frame' in col) and not any(col.startswith(p) for p in ('B1_', 'B2_', 'A1_', 'A2_')):
+                frame_col = col
+        for col in df.columns:
+            if col in ('アクションID', 'ActionID', 'Action'):
+                action_col = col
+                break
+            if action_col is None and ('アクション' in col or 'Action' in col) and not any(col.startswith(p) for p in ('B1_', 'B2_', 'A1_', 'A2_')):
                 action_col = col
         if frame_col is None:
             frame_col = df.columns[0]
@@ -66,9 +74,11 @@ def main():
             action_col = df.columns[1]
         frame_to_action = {}
         for _, row in df.iterrows():
-            if pd.notna(row[frame_col]) and pd.notna(row[action_col]):
+            if pd.notna(row[frame_col]):
                 try:
-                    frame_to_action[int(row[frame_col])] = str(row[action_col])
+                    frame_num = int(row[frame_col])
+                    action = str(row[action_col]) if pd.notna(row[action_col]) else ""
+                    frame_to_action[frame_num] = action
                 except Exception:
                     continue
         start_raw = entry['start_frame_orig']
