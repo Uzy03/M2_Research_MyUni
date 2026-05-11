@@ -28,6 +28,10 @@ def main():
                 unique_games.add(game_id)
         if i % 10 == 0:
             print(f"Processed {i+1}/{len(clips)}...")
+        # Skip if already patched correctly
+        if 'action_sequence_frames' in entry and \
+                len(entry['action_sequence_frames']) == len(entry.get('action_sequence', [])):
+            continue
         # Skip if action_sequence is empty
         if not entry.get('action_sequence'):
             entry['action_sequence_frames'] = []

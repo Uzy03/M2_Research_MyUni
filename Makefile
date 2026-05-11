@@ -615,7 +615,7 @@ patch_action_frames:
 	python SoccerNet_script/patch_action_frames.py \
 	    --json_path $(SD_JSON) \
 	    --data_dir $(SOCCERDATA_DIR) \
-	    --max_games $(MAX_GAMES)
+	    --max_games $(SOCCERDATA_MAX_GAMES)
 
 train_phase1_5:
 	mkdir -p $(PHASE1_5_DIR)

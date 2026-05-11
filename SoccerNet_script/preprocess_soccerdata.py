@@ -151,20 +151,25 @@ def get_action_sequence(
     start_frame: int,
     end_frame: int,
     frame_to_action: Dict[int, Tuple[str, int]],
-) -> List[str]:
+    step_raw: int = 25,
+    n_frames: int = 30,
+) -> Tuple[List[str], List[int]]:
     actions_in_window = [
         (frame, action_id)
         for frame, (action_id, _) in frame_to_action.items()
         if start_frame <= frame <= end_frame and action_id not in SKIP_ACTION_IDS
     ]
     actions_in_window.sort(key=lambda x: x[0])
-    result = []
+    seq = []
+    seq_frames = []
     prev = None
-    for _, action_id in actions_in_window:
+    for frame_num, action_id in actions_in_window:
         if action_id != prev:
-            result.append(action_id)
+            seq.append(action_id)
+            clip_frame = max(0, min(n_frames - 1, round((frame_num - start_frame) / step_raw)))
+            seq_frames.append(clip_frame)
             prev = action_id
-    return result
+    return seq, seq_frames
 
 
 def get_nearest_action(
@@ -375,7 +380,9 @@ def process_game(
                 # Get action information
                 action_label, action_id = get_nearest_action(start_raw, frame_to_action)
                 end_raw = start_raw + window_raw
-                action_sequence = get_action_sequence(start_raw, end_raw, frame_to_action)
+                action_sequence, action_sequence_frames = get_action_sequence(
+                    start_raw, end_raw, frame_to_action, step_raw, n_frames
+                )
                 start_sec = start_raw / SRC_FPS
                 
                 # Create metadata entry
@@ -390,6 +397,7 @@ def process_game(
                     "action_label": action_label,
                     "action_id": int(action_id),
                     "action_sequence": action_sequence,
+                    "action_sequence_frames": action_sequence_frames,
                     "ball_coverage": float(ball_coverage),
                     "npy_path": npy_rel_path,
                     "mask_path": mask_rel_path,
