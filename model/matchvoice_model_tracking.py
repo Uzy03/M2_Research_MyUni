@@ -42,6 +42,9 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         self.slot_proj = nn.ModuleList([
             nn.Linear(llm_hidden, llm_hidden) for _ in range(3)
         ])
+        # Phase 1.5 Encoder contrastive: project encoder output (768) into LLM space
+        enc_out_features = kwargs.get('num_features', 768)
+        self.enc_proj = nn.Linear(enc_out_features, llm_hidden)
         
         # visual_encoder を TrackingEncoder で上書き
         out_features = kwargs.get('num_features', 768)

@@ -68,6 +68,12 @@ INSTRUCTION_DIVERSE   ?= 0
 ANSWER_DIVERSE        ?= 0
 LAMBDA_ALIGN          ?= 0
 LAMBDA_SLOT           ?= 0
+OPEN_ENCODER          ?= 0
+LR_ENCODER            ?= 1e-5
+EPOCHS_PHASE1_5       ?= 20
+WINDOW_SIZE           ?= 2
+TEMPERATURE           ?= 0.07
+SOCCERDATA_DIR        ?= /Users/ujihara/m2_研究/SoccerData
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -97,6 +103,8 @@ EPOCHS_PHASE1     ?= 20
 EPOCHS_PHASE2     ?= 10
 EPOCHS_PHASE2C    ?= 20
 CONTRASTIVE_CKPT   = $(PHASE2_DIR)/contrastive.pth
+PHASE1_5_DIR       = $(RUN_DIR)/phase1_5
+ENCODER_CKPT       = $(PHASE1_5_DIR)/encoder_contrastive.pth
 
 DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
               -e CUDA_VISIBLE_DEVICES=$(GPU) \
@@ -117,6 +125,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         run_pipeline run_pipeline_curriculum \
         train_phase1 run_from_phase2 run_curriculum_from_phase2 \
         train_contrastive_phase2 run_contrastive_from_phase2 \
+        patch_action_frames train_phase1_5 run_from_phase1_5 \
         inference_free_qa inference_phase4_all \
         check smoke smoke_phase2 clean
 
@@ -469,6 +478,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(ANSWER_DIVERSE)),--answer_diverse,) \
 	    $(if $(filter-out 0,$(LAMBDA_ALIGN)),--lambda_align $(LAMBDA_ALIGN),) \
 	    $(if $(filter-out 0,$(LAMBDA_SLOT)),--lambda_slot $(LAMBDA_SLOT),) \
+	    $(if $(filter 1,$(OPEN_ENCODER)),--open_visual_encoder --lr_encoder $(LR_ENCODER),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
@@ -602,12 +612,49 @@ run_contrastive_from_phase2:
 	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
 	    ACTION_CKPT=$(CONTRASTIVE_CKPT)
 
+patch_action_frames:
+	python SoccerNet_script/patch_action_frames.py \
+	    --json_path $(SD_JSON) \
+	    --data_dir $(SOCCERDATA_DIR) \
+	    --max_games $(MAX_GAMES)
+
+train_phase1_5:
+	mkdir -p $(PHASE1_5_DIR)
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) \
+	python tracking/train_contrastive_phase2.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(SHARED_PHASE1_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(ENCODER_CKPT) \
+	    --batch_size $(BATCH_PHASE2) \
+	    --epochs $(EPOCHS_PHASE1_5) \
+	    --max_games $(MAX_GAMES) \
+	    --window_size $(WINDOW_SIZE) \
+	    --temperature $(TEMPERATURE) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE1_5_DIR)/train.log
+
+run_from_phase1_5:
+	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
+	$(MAKE) train_phase1_5 \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT)
+	$(MAKE) train_action_alignment \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
+	    REGRESSION_CKPT=checkpoints/$(RUN_TS)/phase1_5/encoder_contrastive.pth \
+	    SENTENCE_FORMAT=$(SENTENCE_FORMAT) INSTRUCTION_DIVERSE=$(INSTRUCTION_DIVERSE) \
+	    LAMBDA_SLOT=$(LAMBDA_SLOT) EPOCHS_PHASE2=$(EPOCHS_PHASE2)
+	$(MAKE) inference_soccer_qa \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT)
+
 check:
 	python -m py_compile tracking/train_action_alignment.py
 	python -m py_compile tracking/train_trajectory_regression.py
+	python -m py_compile tracking/train_contrastive_phase2.py
 	python -m py_compile tracking/dataset/multitask_dataset.py
+	python -m py_compile tracking/dataset/window_dataset.py
 	python -m py_compile tracking/encoder.py
 	python -m py_compile SoccerNet_script/add_task_labels.py
+	python -m py_compile SoccerNet_script/patch_action_frames.py
 	python tracking/tests/test_phase2.py
 	@echo "All checks passed!"
 

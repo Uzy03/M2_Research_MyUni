@@ -291,6 +291,10 @@ def main():
                         help='per-slot alignment loss の係数（B-2）')
     parser.add_argument('--test_only', action='store_true',
                         help='学習をスキップして --out_ckpt からロードしてテスト評価のみ実行')
+    parser.add_argument('--open_visual_encoder', action='store_true',
+                        help='TrackingEncoder を解凍して Phase 2 でも学習する（Approach B\'）')
+    parser.add_argument('--lr_encoder', type=float, default=1e-5,
+                        help='open_visual_encoder 時の Encoder 専用学習率（デフォルト: 1e-5）')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -342,6 +346,7 @@ def main():
         use_ans_token=args.use_ans_token,
         qformer_heads=qformer_heads,
         use_chat_template=args.use_chat_template,
+        open_visual_encoder=args.open_visual_encoder,
         num_players=23,
         in_features=5,
         d_model=256,
@@ -349,6 +354,8 @@ def main():
     )
     model.to(args.device)
     print(f"LoRA: {'enabled' if args.open_lora else 'disabled'}")
+    enc_status = "unfrozen (Approach B')" if args.open_visual_encoder else "frozen"
+    print(f"Encoder: {enc_status}")
 
     print("\n" + "=" * 60)
     print("Step 3: Phase 1 チェックポイントロード")
@@ -415,7 +422,17 @@ def main():
     else:
         print("Step 5: 訓練ループ")
         print("=" * 60)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        if args.open_visual_encoder:
+            other_params = [p for n, p in model.named_parameters()
+                            if not n.startswith('visual_encoder.') and p.requires_grad]
+            optimizer = torch.optim.Adam([
+                {'params': model.visual_encoder.parameters(), 'lr': args.lr_encoder},
+                {'params': other_params, 'lr': args.lr},
+            ])
+        else:
+            optimizer = torch.optim.Adam(
+                [p for p in model.parameters() if p.requires_grad], lr=args.lr
+            )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
         log_csv = Path(args.out_ckpt).with_suffix('.train_log.csv')
         with open(log_csv, "w", newline="") as f:

@@ -32,8 +32,10 @@
 | LoRA rank=4 + 指示多様化 50試合 (202605080936) | 4 | 20 | 0.3595 | 0.0000 | × | 全件ガーベジ（"versa.ComponentPlacement Arabia зрения..."）。完全崩壊 |
 | No LoRA + 指示多様化 + 簡易B-3 (202605101027) | なし | 20 | 0.6501 | 0.8297 | × | formation/first_action=全件空文字・commentary=全件定型文。△A(202605061813)から悪化 |
 | LoRA rank=4 + 指示多様化 + 簡易B-3 (202605101042) | 4 | 20 | 0.6027 | 0.0714 | △B | B-3なしと同等。formation「4-4-2 formation」等LLM幻覚で意味ある応答あり |
+| No LoRA + 指示多様化 + B-2 slot align (202605102355) | なし | 10 | 0.5675 | 0.7231 | × | formation/first_action=全件空白・commentary=全件actionテンプレート固定 |
+| LoRA rank=4 + 指示多様化 + B-2 slot align (202605102337) | 4 | 10 | 0.0285 | 0.0000 | × | Phase3=全件ループ/instructionエコー。formation=△B、commentary/first_action=崩壊 |
 
-**結論**: データ増加も簡易B-3（全トークン平均align）も効果なし。No LoRA + 簡易B-3 は △A から × に悪化（align損失が表現を混乱させた可能性）。LoRA rank=4 + 簡易B-3 は △B 維持（改善なし）。全実験中 Free QA △ 以上は「No LoRA + 指示多様化 5試合（202605061813）」の △A のみ。→ **スロット構造のない平均alignは無効。B-2（スロット別Q-Former）を先に実装してから proper B-3 が必須**。
+**結論**: データ増加・簡易B-3・B-2スロットalignのいずれもFree QA改善なし。特にLoRA+B-2はPhase3 F1=0.0000に完全崩壊。**根本問題はEncoderの出力に言語情報がないことであり、Q-Formerだけをいくら賢くしてもGrounding問題は解消しない。次ステップ: Encoder自体に言語構造を蒸留する（対照学習によるEncoder事前学習 = サッカー版CLIP）が必要**。
 
 ---
 
@@ -677,3 +679,37 @@ instruction: "List the soccer actions occurring in this tracking sequence in chr
 - **rank=4 + 指示多様化**: 5ep でも formation/commentary/first_action の形式理解が維持された。多様化なし rank=4 と同様の指示追従能力を持ちつつ、prefix を無視する問題は変わらず
 - **根本的なトレードオフ**: No LoRA = prefix 使う・フォーマット切替不可 / LoRA = フォーマット切替できる・prefix 無視、は指示文・回答多様化を加えても解消されない
 - **Token-Word Alignment（Phase B-3）がこのトレードオフを解消する本命**：Q-Former トークンを LLM 意味空間にアラインすることで、LoRA なしでも LLM が prefix を「意味ある情報」として読めるようにする
+
+---
+
+## Phase 2/3/4: B-2 スロット別 Q-Former Alignment（5ゲーム）
+
+> 設定: SENTENCE_FORMAT=1 / INSTRUCTION_DIVERSE=1 / LAMBDA_SLOT=0.1 / qformer_heads=4 自動設定  
+> スロット構造: Slot0(tokens 0-7)=action / Slot1(tokens 8-15)=zone / Slot2(tokens 16-23)=pressure / Slot3(tokens 24-31)=summary(align なし)  
+> gradient clipping: max_norm=1.0 を追加（LoRA版の爆発対策）
+
+| Experiment | LoRA | ep | best_val (epoch) | Test F1↑ | Phase3 F1↑ | Free QA |
+|---|---|---|---|---|---|---|
+| **No LoRA + B-2 (202605102355)** | なし | 10 | 0.4071 (ep6) | 0.5675 | 0.7231 (n=15) | × |
+| **LoRA rank=4 + B-2 (202605102337)** | 4 | 10 | 0.3890 (ep6) | 0.0285 | 0.0000 (n=25) | × |
+
+**Phase 4 Free QA 詳細**:
+
+| 指示文 | No LoRA B-2 (2355) | LoRA B-2 (2337) |
+|---|---|---|
+| formation | 全件空白 (×) | △B（「4-3-3」「4-4-2」形式で回答・幻覚） |
+| commentary | 全件 `"In this soccer sequence, performing X."` テンプレート (×) | ループ（「The. The. The.」「This is a soccer game.」）(×) |
+| first_action | 全件空白またはテンプレート (×) | instruction エコー (×) |
+
+**考察**:
+- No LoRA B-2: Phase3 F1=0.7231 は B-0a (0.7345) からやや低下。スロットalignが生成表現を制約した可能性
+- LoRA B-2: Phase3 F1=0.0000 に完全崩壊。gradient clippingを追加してもLoRA+slot alignの組み合わせは不安定
+- **B-2スロット構造を加えてもFree QAは改善しない** → Q-Formerをどう改造しても、Encoder出力に言語情報がなければ無意味
+
+**根本的な結論（B-0〜B-2を通じて）**:
+
+BLIP-2がQ-Former alignmentで成功できるのはCLIPというセマンティックEncoder（数億ペアで学習済み）があるから。
+本研究のTrackingEncoderは軌跡予測という物理タスクで学習されており、出力は幾何学的特徴のみ。
+Q-Formerがどれだけ賢くても「言語情報のない入力を言語空間に変換する」ことはできない。
+
+**次ステップ**: 対照学習によるEncoder事前学習（トラッキング↔アクションラベルのペアで「サッカー版CLIP」を構築）が必要。
