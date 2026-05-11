@@ -467,6 +467,7 @@ def main():
 
         print(f"Best val loss: {best_val:.4f}  Checkpoint: {args.out_ckpt}")
 
+    if args.curriculum_stages is None:
         print("\n" + "=" * 60)
         print("Step 6: テスト評価")
         print("=" * 60)
