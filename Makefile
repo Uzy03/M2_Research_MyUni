@@ -43,23 +43,24 @@ RUN_TS     ?= $(shell date +%Y%m%d%H%M)
 RUN_DIR    ?= checkpoints/$(RUN_TS)
 PHASE1_DIR       = $(RUN_DIR)/phase1
 # Phase2タグ: init重み(1 or 15) × 指示多様化(0 or 1) でディレクトリを区別
-PHASE2_TAG       = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)
+PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)
+SHARED_PHASE1_DIR     = checkpoints/phase1
+SHARED_PHASE1_CKPT    = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
+SHARED_PHASE1_5_DIR   ?= checkpoints/phase1_5
+SHARED_PHASE1_5_CKPT  = $(SHARED_PHASE1_5_DIR)/encoder_contrastive.pth
+SHARED_PHASE2_DIR     = checkpoints/phase2_$(PHASE2_TAG)
+SHARED_PHASE2_CKPT    = $(SHARED_PHASE2_DIR)/action_alignment.pth
+USE_PHASE1_5          ?= 0
+PHASE2_INIT_CKPT      = $(if $(filter 1,$(USE_PHASE1_5)),$(SHARED_PHASE1_5_CKPT),$(SHARED_PHASE1_CKPT))
+# アブレーション用 (RUN_TS ベース)
 PHASE2_DIR       = $(RUN_DIR)/phase2_$(PHASE2_TAG)
 PHASE2_5_DIR     = $(RUN_DIR)/phase2_5_$(PHASE2_TAG)
 PHASE3_DIR       = $(RUN_DIR)/phase3_$(PHASE2_TAG)
-PHASE3_5_DIR     = $(RUN_DIR)/phase3_5_$(PHASE2_TAG)
 PHASE4_ALL_DIR   = $(RUN_DIR)/phase4_$(PHASE2_TAG)
-PHASE4_5_ALL_DIR = $(RUN_DIR)/phase4_5_$(PHASE2_TAG)
 PHASE4_DIR       = $(PHASE4_ALL_DIR)/$(basename $(notdir $(QA_CONFIG)))
 REGRESSION_CKPT  = $(PHASE1_DIR)/trajectory_regression.pth
 ACTION_CKPT      = $(PHASE2_DIR)/action_alignment.pth
 PHASE2_5_CKPT    = $(PHASE2_5_DIR)/action_alignment.pth
-SHARED_PHASE1_DIR  = checkpoints/phase1
-SHARED_PHASE1_CKPT = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
-SHARED_PHASE1_5_DIR  ?= checkpoints/phase1_5
-SHARED_PHASE1_5_CKPT  = $(SHARED_PHASE1_5_DIR)/encoder_contrastive.pth
-USE_PHASE1_5         ?= 0
-PHASE2_INIT_CKPT      = $(if $(filter 1,$(USE_PHASE1_5)),$(SHARED_PHASE1_5_CKPT),$(SHARED_PHASE1_CKPT))
 QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
 OPEN_LORA       ?= 0
@@ -140,7 +141,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_contrastive_phase2 run_contrastive_from_phase2 \
         patch_action_frames train_phase1_5 train_phase1_5_shared run_from_phase1_5 \
         inference_free_qa inference_phase4_all generate_qa_data \
-        train_phase2_5 run_ablation \
+        train_phase2 train_phase2_5 run_ablation \
         check smoke smoke_phase2 clean
 
 build:
@@ -661,7 +662,7 @@ generate_qa_data:
 	    --json_path $(SD_JSON) \
 	    --model $(LLM_MODEL) \
 	    --max_games $(MAX_GAMES) \
-	    --save_interval 100
+	    --save_interval 10
 
 train_phase1_5:
 	mkdir -p $(PHASE1_5_DIR)
@@ -679,11 +680,19 @@ train_phase1_5:
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE1_5_DIR)/train.log
 
+# Phase 2 共有チェックポイント保存 (phase1/phase1.5 と同じイメージ)
+# 使い方: make train_phase2 USE_PHASE1_5=1 INSTRUCTION_DIVERSE=1 GPU=0
+train_phase2:
+	$(MAKE) train_action_alignment \
+	    PHASE2_DIR=$(SHARED_PHASE2_DIR) \
+	    ACTION_CKPT=$(SHARED_PHASE2_CKPT) \
+	    REGRESSION_CKPT=$(PHASE2_INIT_CKPT)
+
 train_phase2_5:
 	mkdir -p $(PHASE2_5_DIR)
 	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
 	    --json_path $(SD_JSON) \
-	    --ckpt_path $(ACTION_CKPT) \
+	    --ckpt_path $(SHARED_PHASE2_CKPT) \
 	    --llm_ckpt $(LLM_CKPT) \
 	    --out_ckpt $(PHASE2_5_CKPT) \
 	    --context_len $(SD_CONTEXT) \
@@ -703,31 +712,21 @@ train_phase2_5:
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_5_DIR)/train.log
 
-# アブレーション1パターン分: Phase2→3→4→2.5→3→4 を一括実行
-# 使い方例: make run_ablation USE_PHASE1_5=1 INSTRUCTION_DIVERSE=1 GPU=0 MAX_GAMES=5
+# アブレーション: Phase 2.5 以降を一括実行 (Phase 2 は train_phase2 で事前完了が前提)
+# 使い方: make run_ablation USE_PHASE1_5=1 INSTRUCTION_DIVERSE=1 GPU=0 MAX_GAMES=5
 run_ablation:
 	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
-	@echo "=== Ablation: $(PHASE2_TAG) ==="
-	$(MAKE) train_action_alignment \
-	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
-	    REGRESSION_CKPT=$(PHASE2_INIT_CKPT) \
-	    SENTENCE_FORMAT=$(SENTENCE_FORMAT) INSTRUCTION_DIVERSE=$(INSTRUCTION_DIVERSE)
-	$(MAKE) inference_soccer_qa \
-	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
-	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
-	$(MAKE) inference_phase4_all \
-	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
-	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
+	@echo "=== Ablation Phase2.5+: $(PHASE2_TAG) (Phase2 ckpt: $(SHARED_PHASE2_CKPT)) ==="
 	$(MAKE) train_phase2_5 \
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
 	    SENTENCE_FORMAT=$(SENTENCE_FORMAT) INSTRUCTION_DIVERSE=$(INSTRUCTION_DIVERSE)
 	$(MAKE) inference_soccer_qa \
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
-	    ACTION_CKPT=$(PHASE2_5_CKPT) PHASE3_DIR=$(PHASE3_5_DIR) \
+	    ACTION_CKPT=$(PHASE2_5_CKPT) \
 	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
 	$(MAKE) inference_phase4_all \
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
-	    ACTION_CKPT=$(PHASE2_5_CKPT) PHASE4_ALL_DIR=$(PHASE4_5_ALL_DIR) \
+	    ACTION_CKPT=$(PHASE2_5_CKPT) \
 	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
 
 run_from_phase1_5:
