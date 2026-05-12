@@ -228,11 +228,12 @@ def main():
         avg = sum(scores) / len(scores) if scores else float('nan')
         print(f"  {metric}: {avg:.4f}  (n={len(scores)})")
 
-    Path(args.out_csv).parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out_csv, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=['clip_id', 'task', 'metric', 'gt', 'generated', 'score'])
-        writer.writeheader()
-        writer.writerows(rows)
+    if active_tasks:
+        Path(args.out_csv).parent.mkdir(parents=True, exist_ok=True)
+        with open(args.out_csv, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['clip_id', 'task', 'metric', 'gt', 'generated', 'score'])
+            writer.writeheader()
+            writer.writerows(rows)
     print(f"\nSaved {len(rows)} rows to {args.out_csv}")
 
     if args.free_config:

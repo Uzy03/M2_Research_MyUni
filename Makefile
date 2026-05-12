@@ -77,7 +77,7 @@ LR_ENCODER            ?= 1e-5
 EPOCHS_PHASE1_5       ?= 20
 WINDOW_SIZE           ?= 2
 TEMPERATURE           ?= 0.07
-SOCCERDATA_DIR        ?= /Users/ujihara/m2_研究/SoccerData
+SOCCERDATA_DIR        ?= /user/arch/ujihara/SoccerData
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -575,7 +575,7 @@ inference_phase4_all:
 	    --json_path $(SD_JSON) \
 	    --ckpt_path $(ACTION_CKPT) \
 	    --llm_ckpt $(LLM_CKPT) \
-	    --out_csv $(RUN_DIR)/phase4/placeholder/results.csv \
+	    --out_csv $(RUN_DIR)/phase4/results.csv \
 	    --context_len $(SD_CONTEXT) \
 	    --max_games $(MAX_GAMES) \
 	    --repetition_penalty $(REP_PENALTY) \
