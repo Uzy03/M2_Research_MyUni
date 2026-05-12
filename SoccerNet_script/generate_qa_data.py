@@ -1,17 +1,12 @@
 import json
 import argparse
-import sys, os
-from pathlib import Path
 
-# Add parent directory to sys.path for ACTION_NAMES_EN import
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tracking.dataset.multitask_dataset import ACTION_NAMES_EN
 
 SYSTEM_PROMPT = (
     "You are an AI assistant specialized in soccer match analysis. "
-    "You will receive structured labels from a 30-second soccer tracking clip. "
+    "You will receive structured labels from a soccer tracking clip. "
     "Design your responses as if you can actually watch this soccer sequence. "
-    "Cover diverse aspects: actions performed, timing, ball possession, field position, "
+    "Cover diverse aspects: actions performed, ball possession, field position, "
     "pressing intensity, and tactical implications. "
     "Only include questions and answers that are clearly supported by the provided data. "
     "For complex reasoning questions, provide step-by-step logical explanations "
@@ -21,8 +16,8 @@ SYSTEM_PROMPT = (
 # --- LLaVA-style few-shot example ---
 FEW_SHOT_EXAMPLE = """
 === EXAMPLE INPUT ===
-Clip data (30-second soccer sequence):
-- Actions: pass, through pass (timing: pass at ~3s, through pass at ~11s)
+Clip data (soccer sequence):
+- Actions: pass, through pass
 - Ball possession: The home team has ball possession in this sequence.
 - Field position: The play is in the center of the middle third.
 - Pressing intensity: The players are applying medium pressure around the ball.
@@ -31,13 +26,13 @@ Clip data (30-second soccer sequence):
 {
   "conversation": [
     {"from": "human", "value": "What actions are being performed in this soccer clip?"},
-    {"from": "gpt", "value": "The home team performs a pass at around 3 seconds, followed by a through pass at around 11 seconds into the sequence."},
+    {"from": "assistant", "value": "The home team performs a pass followed by a through pass, attempting to break through the midfield line."},
     {"from": "human", "value": "How intense is the defensive pressure in this clip?"},
-    {"from": "gpt", "value": "The players are applying medium pressure around the ball, meaning the defending team is actively contesting possession but has not fully committed to a high press."}
+    {"from": "assistant", "value": "The players are applying medium pressure around the ball, meaning the defending team is actively contesting possession but has not fully committed to a high press."}
   ],
   "description": {
     "instruction": "Describe what is happening in this soccer sequence in detail.",
-    "answer": "In this 30-second clip, the home team maintains ball possession in the central middle third. Starting at around 3 seconds, a pass is played to a teammate, who then plays a through pass at approximately 11 seconds, attempting to break through the midfield line. Throughout the sequence, the away team applies medium pressure, creating a competitive midfield contest while the home team works to advance play."
+    "answer": "In this clip, the home team maintains ball possession in the central middle third. A pass is played to a teammate, who then plays a through pass attempting to break through the midfield line. Throughout the sequence, the away team applies medium pressure, creating a competitive midfield contest while the home team works to advance play."
   },
   "reasoning": {
     "instruction": "What tactical objective is the home team pursuing, and what risks do they face?",
@@ -46,24 +41,11 @@ Clip data (30-second soccer sequence):
 }
 """
 
-def format_action_timing(action_sequence, action_sequence_frames):
-    """action IDs + clip frame indices → readable timing string"""
-    if not action_sequence or not action_sequence_frames:
-        return None
-    parts = []
-    for action_id, frame in zip(action_sequence, action_sequence_frames):
-        name = ACTION_NAMES_EN.get(str(action_id), f"action_{action_id}")
-        parts.append(f"{name} at ~{frame}s")
-    return ", ".join(parts)
-
-def build_prompt(label_action, label_possession, label_zone, label_pressure, timing=None) -> str:
-    action_detail = label_action
-    if timing:
-        action_detail = f"{label_action} (timing: {timing})"
+def build_prompt(label_action, label_possession, label_zone, label_pressure) -> str:
     return f"""{FEW_SHOT_EXAMPLE}
 === NOW GENERATE FOR THE FOLLOWING CLIP ===
-Clip data (30-second soccer sequence):
-- Actions: {action_detail}
+Clip data (soccer sequence):
+- Actions: {label_action}
 - Ball possession: {label_possession}
 - Field position: {label_zone}
 - Pressing intensity: {label_pressure}
@@ -136,18 +118,14 @@ def main():
         label_possession = entry.get("label_possession", "")
         label_zone = entry.get("label_zone", "")
         label_pressure = entry.get("label_pressure", "")
-        timing = format_action_timing(
-            entry.get("action_sequence", []),
-            entry.get("action_sequence_frames", [])
-        )
 
         if args.dry_run:
             entry["llm_qa"] = [
                 {"type": "conversation", "turns": [
                     {"from": "human", "value": "What is happening in this soccer sequence?"},
-                    {"from": "gpt",   "value": f"[dry_run] Actions: {label_action}."},
+                    {"from": "assistant",   "value": f"[dry_run] Actions: {label_action}."},
                     {"from": "human", "value": "Which team has the ball?"},
-                    {"from": "gpt",   "value": f"[dry_run] {label_possession}"},
+                    {"from": "assistant",   "value": f"[dry_run] {label_possession}"},
                 ]},
                 {"type": "description",
                  "instruction": "Describe this soccer sequence in detail.",
@@ -157,7 +135,7 @@ def main():
                  "answer": "[dry_run] Tactical analysis placeholder."},
             ]
         else:
-            prompt = build_prompt(label_action, label_possession, label_zone, label_pressure, timing)
+            prompt = build_prompt(label_action, label_possession, label_zone, label_pressure)
             try:
                 messages = [
                     {"role": "system", "content": SYSTEM_PROMPT},

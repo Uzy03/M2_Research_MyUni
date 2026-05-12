@@ -172,11 +172,11 @@ class MultiTaskDataset(Dataset):
                 for qa in entry.get("llm_qa", []):
                     qa_type = qa.get("type", "")
                     if "turns" in qa:
-                        # multi-turn conversation: human/gpt ペアを個別サンプルに展開
+                        # multi-turn conversation: human/assistant ペアを個別サンプルに展開
                         turns = qa["turns"]
                         for i in range(len(turns) - 1):
                             if (turns[i].get("from") == "human" and
-                                    turns[i + 1].get("from") == "gpt" and
+                                    turns[i + 1].get("from") == "assistant" and
                                     turns[i].get("value") and turns[i + 1].get("value")):
                                 self._llm_samples.append((entry, {
                                     "type": f"llm_{qa_type}",

@@ -49,7 +49,9 @@ RUN pip install --no-cache-dir \
         SoccerNet==0.1.62 \
         huggingface_hub \
         sentencepiece \
-        rouge-score
+        rouge-score \
+        jinja2 \
+        json-repair
 
 COPY . /workspace/
 
