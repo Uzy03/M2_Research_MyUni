@@ -183,7 +183,11 @@ def main():
                     raw = raw.split("```")[1]
                     if raw.startswith("json"):
                         raw = raw[4:]
-                qa_data = json.loads(raw)
+                try:
+                    qa_data = json.loads(raw)
+                except json.JSONDecodeError:
+                    from json_repair import repair_json
+                    qa_data = json.loads(repair_json(raw))
                 # conversation: turns list
                 conv = qa_data["conversation"]
                 conv_entry = {"type": "conversation", "turns": conv if isinstance(conv, list) else []}
@@ -208,9 +212,12 @@ def main():
                 json.dump(clips, f, indent=2, ensure_ascii=False)
             print(f"[checkpoint] saved {generated} generated so far...")
 
-    with open(args.json_path, "w", encoding="utf-8") as f:
-        json.dump(clips, f, indent=2, ensure_ascii=False)
-    print(f"Done. Total generated: {generated}")
+    if args.dry_run:
+        print(f"DRY RUN complete. {generated} entries would be generated. File not written.")
+    else:
+        with open(args.json_path, "w", encoding="utf-8") as f:
+            json.dump(clips, f, indent=2, ensure_ascii=False)
+        print(f"Done. Total generated: {generated}")
 
 if __name__ == "__main__":
     main()
