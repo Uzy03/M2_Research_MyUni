@@ -1,0 +1,131 @@
+import json
+import argparse
+from pathlib import Path
+
+SYSTEM_PROMPT = (
+    "You are a professional soccer analyst. Given structured labels from a 30-second soccer tracking clip, "
+    "generate natural language QA pairs. Be specific and use varied vocabulary."
+)
+
+def build_prompt(label_action, label_possession, label_zone, label_pressure) -> str:
+    return f"""Clip data:
+- Actions: {label_action}
+- Ball possession: {label_possession}
+- Field position: {label_zone}
+- Pressing intensity: {label_pressure}
+
+Generate exactly 3 QA pairs as JSON:
+{{
+  \"conversation\": {{\"instruction\": \"<short direct question (1 sentence)>\", \"answer\": \"<1-2 sentence answer>\"}},
+  \"description\": {{\"instruction\": \"<question asking for detailed description>\", \"answer\": \"<3-4 sentence comprehensive answer>\"}},
+  \"reasoning\": {{\"instruction\": \"<question asking for tactical analysis>\", \"answer\": \"<3-4 sentence analysis with reasoning>\"}},
+}}
+Only output the JSON object, no other text."""
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json_path", type=str, default="soccerdata_clips/fps1_sec30_onball_step5s/clips.json")
+    parser.add_argument("--model", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct")
+    parser.add_argument("--max_games", type=int, default=0)
+    parser.add_argument("--save_interval", type=int, default=100)
+    parser.add_argument("--dry_run", action="store_true")
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    try:
+        with open(args.json_path, encoding="utf-8") as f:
+            clips = json.load(f)
+    except Exception as e:
+        print(f"ERROR: Failed to load {args.json_path}: {e}")
+        return
+
+    if not args.dry_run:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch
+        print(f"Loading model: {args.model}")
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        llm = AutoModelForCausalLM.from_pretrained(
+            args.model, torch_dtype=torch.float16, device_map="auto"
+        )
+        llm.eval()
+        print("Model loaded.")
+
+    unique_games = set()
+    generated = 0
+
+    for i, entry in enumerate(clips):
+        game_id = entry.get("game_id")
+        if args.max_games > 0:
+            if game_id not in unique_games:
+                if len(unique_games) >= args.max_games:
+                    continue
+                unique_games.add(game_id)
+
+        if "llm_qa" in entry and isinstance(entry["llm_qa"], list) and len(entry["llm_qa"]) == 3:
+            continue
+
+        label_action = entry.get("label_action") or "no notable actions"
+        label_possession = entry.get("label_possession", "")
+        label_zone = entry.get("label_zone", "")
+        label_pressure = entry.get("label_pressure", "")
+
+        if args.dry_run:
+            entry["llm_qa"] = [
+                {"type": "conversation", "instruction": "What is happening in this soccer sequence?", "answer": f"[dry_run] Actions: {label_action}."},
+                {"type": "description", "instruction": "Describe this soccer sequence in detail.", "answer": f"[dry_run] {label_possession} {label_zone} {label_pressure}"},
+                {"type": "reasoning", "instruction": "Analyze the tactical situation in this sequence.", "answer": f"[dry_run] Tactical analysis placeholder."},
+            ]
+        else:
+            prompt = build_prompt(label_action, label_possession, label_zone, label_pressure)
+            try:
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": prompt},
+                ]
+                text_input = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+                inputs = tokenizer(text_input, return_tensors="pt").to(llm.device)
+                with torch.no_grad():
+                    output_ids = llm.generate(
+                        **inputs,
+                        max_new_tokens=600,
+                        temperature=0.7,
+                        do_sample=True,
+                        pad_token_id=tokenizer.eos_token_id,
+                    )
+                raw = tokenizer.decode(
+                    output_ids[0][inputs.input_ids.shape[1]:],
+                    skip_special_tokens=True,
+                ).strip()
+                if "```" in raw:
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                qa_data = json.loads(raw)
+                entry["llm_qa"] = [
+                    {"type": "conversation", **qa_data["conversation"]},
+                    {"type": "description",  **qa_data["description"]},
+                    {"type": "reasoning",    **qa_data["reasoning"]},
+                ]
+            except Exception as e:
+                print(f"WARNING: clip {entry.get('clip_id')} failed: {e}")
+                entry["llm_qa"] = []
+                continue
+
+        generated += 1
+        if i % 50 == 0:
+            print(f"Progress: {i+1}/{len(clips)}, generated={generated}")
+
+        if args.save_interval > 0 and generated % args.save_interval == 0:
+            with open(args.json_path, "w", encoding="utf-8") as f:
+                json.dump(clips, f, indent=2, ensure_ascii=False)
+            print(f"[checkpoint] saved {generated} generated so far...")
+
+    with open(args.json_path, "w", encoding="utf-8") as f:
+        json.dump(clips, f, indent=2, ensure_ascii=False)
+    print(f"Done. Total generated: {generated}")
+
+if __name__ == "__main__":
+    main()

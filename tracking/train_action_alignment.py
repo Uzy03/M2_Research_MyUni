@@ -295,6 +295,8 @@ def main():
                         help='TrackingEncoder を解凍して Phase 2 でも学習する（Approach B\'）')
     parser.add_argument('--lr_encoder', type=float, default=1e-5,
                         help='open_visual_encoder 時の Encoder 専用学習率（デフォルト: 1e-5）')
+    parser.add_argument("--use_llm_qa", action="store_true",
+                        help="MultiTaskDataset の llm_qa フィールドを学習に使う")
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -311,7 +313,7 @@ def main():
                                     use_short_instruction=args.short_instruction,
                                     allowed_tasks=allowed_tasks, use_sentence_format=args.sentence_format,
                                     use_instruction_diverse=args.instruction_diverse,
-                                    use_answer_diverse=args.answer_diverse)
+                                    use_answer_diverse=args.answer_diverse, use_llm_qa=args.use_llm_qa)
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
     if args.max_samples > 0:

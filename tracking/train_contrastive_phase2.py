@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, Subset
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.matchvoice_model_tracking import matchvoice_model_tracking
 from tracking.dataset.window_dataset import WindowDataset
+from tracking.dataset.multitask_dataset import ACTION_NAMES_EN
 
 def window_collate_fn(batch):
     # batch: list of (tracking_window: Tensor(W,23,5), mask_window: Tensor(W,23), action_text: str)
@@ -31,6 +32,40 @@ def info_nce_loss(track_emb, text_emb, temperature):
     loss_s2t = F.cross_entropy(logits.T, labels)
     return (loss_t2s + loss_s2t) / 2
 
+def evaluate_topk(model, loader, embed_fn, vocab_texts, vocab_embs, device, proj_dtype):
+    """
+    vocab_texts: list[str]  ユニークなアクション名（例: ["pass", "shot", ...]）
+    vocab_embs:  Tensor(V, D)  L2正規化済み、precomputed
+    Returns: (top1_acc: float, top3_acc: float)
+    """
+    model.eval()
+    correct1, correct3, total = 0, 0, 0
+    with torch.no_grad():
+        for batch in loader:
+            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v
+                     for k, v in batch.items()}
+            enc_out    = model.visual_encoder(batch["tracking"], batch["mask"])
+            track_mean = enc_out.mean(dim=1)
+            track_proj = model.enc_proj(track_mean.to(proj_dtype))
+            track_norm = F.normalize(track_proj.float(), dim=-1)  # (B, D)
+
+            sims = track_norm @ vocab_embs.T  # (B, V)
+            k    = min(3, sims.shape[1])
+            top3_pred = sims.topk(k, dim=-1).indices  # (B, k)
+
+            for bi, text in enumerate(batch["action_text"]):
+                if text not in vocab_texts:
+                    continue
+                gt_idx = vocab_texts.index(text)
+                pred_list = top3_pred[bi].tolist()
+                if gt_idx == pred_list[0]:
+                    correct1 += 1
+                if gt_idx in pred_list:
+                    correct3 += 1
+                total += 1
+    return (correct1 / max(1, total), correct3 / max(1, total))
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--json_path",   default="soccerdata_clips/fps1_sec30_onball_step5s/clips.json")
@@ -42,7 +77,10 @@ def parse_args():
     p.add_argument("--batch_size",  type=int,   default=8)
     p.add_argument("--max_games",   type=int,   default=0)
     p.add_argument("--max_samples", type=int,   default=0)
-    p.add_argument("--test_ratio",  type=float, default=0.1)
+    p.add_argument("--val_ratio",   type=float, default=0.1,
+                   help="Validation split ratio (for loss monitoring)")
+    p.add_argument("--test_ratio",  type=float, default=0.1,
+                   help="Test split ratio (for Top-K accuracy evaluation)")
     p.add_argument("--window_size", type=int,   default=2)
     p.add_argument("--temperature", type=float, default=0.07)
     p.add_argument("--device",      default="cuda")
@@ -58,16 +96,23 @@ def main():
     random.shuffle(indices)
     if args.max_samples > 0:
         indices = indices[:args.max_samples]
-    n_val = max(1, int(len(indices) * args.test_ratio))
-    val_indices   = indices[:n_val]
-    train_indices = indices[n_val:]
+    
+    n_test = max(1, int(len(indices) * args.test_ratio))
+    n_val  = max(1, int(len(indices) * args.val_ratio))
+    test_indices  = indices[:n_test]
+    val_indices   = indices[n_test:n_test + n_val]
+    train_indices = indices[n_test + n_val:]
+    
+    test_loader = DataLoader(Subset(dataset, test_indices),
+                             batch_size=args.batch_size, shuffle=False,
+                             collate_fn=window_collate_fn, num_workers=4, pin_memory=True)
+    val_loader  = DataLoader(Subset(dataset, val_indices),
+                             batch_size=args.batch_size, shuffle=False,
+                             collate_fn=window_collate_fn, num_workers=4, pin_memory=True)
     train_loader = DataLoader(Subset(dataset, train_indices),
                               batch_size=args.batch_size, shuffle=True,
                               collate_fn=window_collate_fn, num_workers=4, pin_memory=True)
-    val_loader   = DataLoader(Subset(dataset, val_indices),
-                              batch_size=args.batch_size, shuffle=False,
-                              collate_fn=window_collate_fn, num_workers=4, pin_memory=True)
-    print(f"Dataset: {len(dataset)} window samples  Train: {len(train_indices)}  Val: {len(val_indices)}")
+    print(f"Dataset: {len(dataset)}  Train: {len(train_indices)}  Val: {len(val_indices)}  Test: {len(test_indices)}")
 
     model = matchvoice_model_tracking(
         load_checkpoint=False, num_features=768, need_temporal="yes",
@@ -117,8 +162,20 @@ def main():
     Path(args.out_ckpt).parent.mkdir(parents=True, exist_ok=True)
     log_csv = Path(args.out_ckpt).with_suffix('.log.csv')
     with open(log_csv, 'w', newline='') as f:
-        csv.writer(f).writerow(['epoch', 'train_loss', 'val_loss'])
+        csv.writer(f).writerow(["epoch", "train_loss", "val_loss", "test_top1", "test_top3"])
     embed_fn = model.llama_model.model.embed_tokens
+
+    vocab_texts = sorted(set(ACTION_NAMES_EN.values()))
+    vocab_embs_list = []
+    with torch.no_grad():
+        for vtext in vocab_texts:
+            ids = model.tokenizer(vtext, add_special_tokens=False,
+                                  return_tensors="pt").input_ids.to(args.device)
+            emb = embed_fn(ids).float().mean(dim=1)  # (1, D)
+            vocab_embs_list.append(F.normalize(emb, dim=-1))
+    vocab_embs = torch.cat(vocab_embs_list, dim=0)  # (V, D)
+    proj_dtype = model.enc_proj.weight.dtype
+    print(f"Vocab size: {len(vocab_texts)}")
 
     best_val = float('inf')
     for epoch in range(1, args.epochs + 1):
@@ -179,6 +236,10 @@ def main():
                     total += loss.item(); n += 1
         avg_val = total / max(1, n)
 
+        top1, top3 = evaluate_topk(model, test_loader, embed_fn,
+                                   vocab_texts, vocab_embs, args.device, proj_dtype)
+        model.train()
+
         mark = ""
         if avg_val < best_val:
             best_val = avg_val
@@ -187,9 +248,11 @@ def main():
             torch.save({'state_dict': save_state}, args.out_ckpt)
             mark = " <- best"
 
-        print(f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}{mark}")
+        print(f"Epoch {epoch}/{args.epochs}  train={avg_train:.4f}  val={avg_val:.4f}  "
+              f"test_top1={top1:.3f}  test_top3={top3:.3f}{mark}")
         with open(log_csv, 'a', newline='') as f:
-            csv.writer(f).writerow([epoch, f'{avg_train:.6f}', f'{avg_val:.6f}'])
+            csv.writer(f).writerow([epoch, f"{avg_train:.6f}", f"{avg_val:.6f}",
+                                    f"{top1:.4f}", f"{top3:.4f}"])
 
     print(f"Best val InfoNCE loss: {best_val:.4f}  Saved: {args.out_ckpt}")
 

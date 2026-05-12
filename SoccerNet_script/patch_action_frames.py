@@ -13,12 +13,15 @@ def main():
     parser.add_argument('--data_dir', default='/Users/ujihara/m2_研究/SoccerData')
     parser.add_argument('--max_games', type=int, default=0, help='処理するゲーム数上限（0=全件）')
     parser.add_argument('--dry_run', action='store_true')
+    parser.add_argument('--save_interval', type=int, default=500,
+                        help='何エントリ修正するたびに中間保存するか（0=最後のみ）')
     args = parser.parse_args()
 
     with open(args.json_path, encoding='utf-8') as f:
         clips = json.load(f)
 
     unique_games = set()
+    modified = 0
     for i, entry in enumerate(clips):
         game_id = entry.get('game_id')
         if args.max_games > 0:
@@ -94,6 +97,11 @@ def main():
                 sequence_frames.append(clip_frame)
                 prev = action_id
         entry['action_sequence_frames'] = sequence_frames
+        modified += 1
+        if not args.dry_run and args.save_interval > 0 and modified % args.save_interval == 0:
+            with open(args.json_path, 'w', encoding='utf-8') as f:
+                json.dump(clips, f, indent=2, ensure_ascii=False)
+            print(f'  [checkpoint] saved {modified} modifications so far...')
         if len(sequence_frames) != len(entry.get('action_sequence', [])):
             print(f"WARNING: length mismatch for {entry['clip_id']}: "
                   f"action_sequence={len(entry['action_sequence'])}, "

@@ -139,7 +139,7 @@ _FALLBACK_PRESSURE = "There is low pressure around the ball."
 class MultiTaskDataset(Dataset):
     def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False,
                  allowed_tasks=None, use_sentence_format=False, use_instruction_diverse=False,
-                 use_answer_diverse=False):
+                 use_answer_diverse=False, use_llm_qa=False):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
@@ -165,8 +165,31 @@ class MultiTaskDataset(Dataset):
             if not self._tasks:
                 raise ValueError(f"allowed_tasks={allowed_tasks!r} に一致するタスクがありません")
 
+        # LLM-QA サンプルの構築
+        self._llm_samples = []
+        if use_llm_qa:
+            for entry in self.entries:
+                for qa in entry.get("llm_qa", []):
+                    qa_type = qa.get("type", "")
+                    if "turns" in qa:
+                        # multi-turn conversation: human/gpt ペアを個別サンプルに展開
+                        turns = qa["turns"]
+                        for i in range(len(turns) - 1):
+                            if (turns[i].get("from") == "human" and
+                                    turns[i + 1].get("from") == "gpt" and
+                                    turns[i].get("value") and turns[i + 1].get("value")):
+                                self._llm_samples.append((entry, {
+                                    "type": f"llm_{qa_type}",
+                                    "instruction": turns[i]["value"],
+                                    "answer":      turns[i + 1]["value"],
+                                }))
+                    elif qa.get("instruction") and qa.get("answer"):
+                        # 旧形式または description/reasoning
+                        self._llm_samples.append((entry, qa))
+        self._n_base = len(self.entries)
+
     def __len__(self):
-        return len(self.entries)
+        return self._n_base + len(self._llm_samples)
 
     def _load_arrays(self, entry):
         npy  = np.load(self.base_dir / entry['npy_path'])   # (T, N, F)
@@ -189,6 +212,15 @@ class MultiTaskDataset(Dataset):
         return torch.FloatTensor(feat_np), torch.BoolTensor(mask_np)
 
     def __getitem__(self, idx):
+        if idx >= self._n_base:
+            # LLM-QA サンプル
+            entry, qa = self._llm_samples[idx - self._n_base]
+            npy, mask = self._load_arrays(entry)
+            feat, msk = self._make_feat(npy, mask)
+            seq_id = entry.get("clip_id", str(idx))
+            slot_labels = ["", "", ""]
+            return feat, msk, qa["instruction"], qa["answer"], f"llm_{qa.get('type', 'qa')}", seq_id, slot_labels
+
         entry = self.entries[idx]
         npy, mask = self._load_arrays(entry)
         feat, msk = self._make_feat(npy, mask)

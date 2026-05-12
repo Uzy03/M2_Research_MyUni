@@ -78,6 +78,8 @@ EPOCHS_PHASE1_5       ?= 20
 WINDOW_SIZE           ?= 2
 TEMPERATURE           ?= 0.07
 SOCCERDATA_DIR        ?= /user/arch/ujihara/SoccerData
+LLM_MODEL             ?= meta-llama/Meta-Llama-3-8B-Instruct
+USE_LLM_QA            ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -129,7 +131,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_phase1 run_from_phase2 run_curriculum_from_phase2 \
         train_contrastive_phase2 run_contrastive_from_phase2 \
         patch_action_frames train_phase1_5 train_phase1_5_shared run_from_phase1_5 \
-        inference_free_qa inference_phase4_all \
+        inference_free_qa inference_phase4_all generate_qa_data \
         check smoke smoke_phase2 clean
 
 build:
@@ -487,6 +489,7 @@ train_action_alignment:
 	    $(if $(filter-out 0,$(LAMBDA_ALIGN)),--lambda_align $(LAMBDA_ALIGN),) \
 	    $(if $(filter-out 0,$(LAMBDA_SLOT)),--lambda_slot $(LAMBDA_SLOT),) \
 	    $(if $(filter 1,$(OPEN_ENCODER)),--open_visual_encoder --lr_encoder $(LR_ENCODER),) \
+	    $(if $(filter 1,$(USE_LLM_QA)),--use_llm_qa,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
@@ -643,6 +646,13 @@ patch_action_frames:
 	    --json_path $(SD_JSON) \
 	    --data_dir $(SOCCERDATA_DIR) \
 	    --max_games $(SOCCERDATA_MAX_GAMES)
+
+generate_qa_data:
+	CUDA_VISIBLE_DEVICES=$(GPU) python SoccerNet_script/generate_qa_data.py \
+	    --json_path $(SD_JSON) \
+	    --model $(LLM_MODEL) \
+	    --max_games $(MAX_GAMES) \
+	    --save_interval 100
 
 train_phase1_5:
 	mkdir -p $(PHASE1_5_DIR)
