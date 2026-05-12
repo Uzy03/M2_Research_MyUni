@@ -70,6 +70,10 @@ def parse_args():
                         help="評価するタスク（カンマ区切り、例: action）。省略時は全タスク")
     parser.add_argument('--free_config', type=str, default=None,
                         help="自由QA用の config JSON（configs/qa_describe.json 等）。指定時は追加推論してCSV保存")
+    parser.add_argument('--free_configs', nargs='*', default=None,
+                        help='自由QA用の config JSON リスト。複数指定時はモデルロード1回で全config実行')
+    parser.add_argument('--phase4_base_dir', type=str, default=None,
+                        help='--free_configs 使用時の出力ベースディレクトリ (例: checkpoints/RUN_TS/phase4)')
     return parser.parse_args()
 
 
@@ -267,6 +271,46 @@ def main():
             writer.writeheader()
             writer.writerows(free_rows)
         print(f"Free QA saved: {free_csv}  ({len(free_rows)} clips)")
+
+    if args.free_configs and args.phase4_base_dir:
+        base_dir_p = Path(args.phase4_base_dir)
+        for cfg_path in args.free_configs:
+            with open(cfg_path) as f:
+                free_cfg = json.load(f)
+            free_instruction = free_cfg['instruction']
+            free_max_tokens  = free_cfg.get('max_new_tokens', args.max_new_tokens)
+            config_stem = Path(cfg_path).stem
+            out_dir = base_dir_p / config_stem
+            out_dir.mkdir(parents=True, exist_ok=True)
+            free_rows = []
+            print(f'\n=== Free QA [{config_stem}]: {free_instruction[:60]}... ===')
+            for entry in clips:
+                npy_path = base_dir / entry['npy_path']
+                if not npy_path.exists():
+                    continue
+                tracking, mask_t = make_feat(entry, base_dir, args.context_len, args.device)
+                model.instruction = free_instruction
+                model._max_new_tokens = free_max_tokens
+                samples = {
+                    'tracking':       tracking,
+                    'mask':           mask_t,
+                    'labels':         torch.zeros(1, 1, dtype=torch.long).to(args.device),
+                    'attention_mask': torch.ones(1, 1, dtype=torch.long).to(args.device),
+                    'input_ids':      torch.zeros(1, 1, dtype=torch.long).to(args.device),
+                    'caption_text':   [''],
+                    'video_path':     [entry.get('clip_id', '')],
+                }
+                with torch.no_grad():
+                    generated_list, _, _ = model(samples, validating=True)
+                gen = generated_list[0] if generated_list else ''
+                free_rows.append({'clip_id': entry.get('clip_id', ''), 'instruction': free_instruction, 'generated': gen})
+                print(f'  [{entry.get("clip_id","")}] {gen[:80]}')
+            out_csv_p = out_dir / 'results.csv'
+            with open(out_csv_p, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'])
+                writer.writeheader()
+                writer.writerows(free_rows)
+            print(f'Free QA [{config_stem}] saved: {out_csv_p}  ({len(free_rows)} clips)')
 
 
 if __name__ == '__main__':

@@ -34,6 +34,8 @@
 | LoRA rank=4 + 指示多様化 + 簡易B-3 (202605101042) | 4 | 20 | 0.6027 | 0.0714 | △B | B-3なしと同等。formation「4-4-2 formation」等LLM幻覚で意味ある応答あり |
 | No LoRA + 指示多様化 + B-2 slot align (202605102355) | なし | 10 | 0.5675 | 0.7231 | × | formation/first_action=全件空白・commentary=全件actionテンプレート固定 |
 | LoRA rank=4 + 指示多様化 + B-2 slot align (202605102337) | 4 | 10 | 0.0285 | 0.0000 | × | Phase3=全件ループ/instructionエコー。formation=△B、commentary/first_action=崩壊 |
+| **Approach A: Phase1.5 InfoNCE → Phase2 (202605112350)** | なし | 10 | **0.780** | — | — | Phase4結果待ち。Phase2 train=0.262/val=0.419(ep10)。安定・過学習なし |
+| **Approach B: Phase2 Encoder解凍+slot_loss (202605112330)** | なし | 10 | **0.847** | — | — | Phase4結果待ち。ep4(val=0.395)以降過学習(train→0.015/val→0.770) |
 
 **結論**: データ増加・簡易B-3・B-2スロットalignのいずれもFree QA改善なし。特にLoRA+B-2はPhase3 F1=0.0000に完全崩壊。**根本問題はEncoderの出力に言語情報がないことであり、Q-Formerだけをいくら賢くしてもGrounding問題は解消しない。次ステップ: Encoder自体に言語構造を蒸留する（対照学習によるEncoder事前学習 = サッカー版CLIP）が必要**。
 

@@ -27,8 +27,6 @@ class WindowDataset(Dataset):
                     if len(unique_games) >= max_games:
                         continue
                     unique_games.add(game_id)
-                elif game_id not in unique_games:
-                    continue
             # Check for action_sequence_frames
             if 'action_sequence_frames' not in entry:
                 print(f"[WindowDataset] Warning: entry missing 'action_sequence_frames', skipping. id={entry.get('id')}")

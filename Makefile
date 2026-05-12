@@ -553,6 +553,7 @@ inference_free_qa:
 	    --max_games $(MAX_GAMES) \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    --qformer_heads $(QFORMER_HEADS) \
 	    --tasks none \
 	    $(if $(QA_CONFIG),--free_config $(QA_CONFIG),) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
@@ -560,9 +561,23 @@ inference_free_qa:
 	    2>&1 | tee $(PHASE4_DIR)/inference.log
 
 inference_phase4_all:
-	$(MAKE) inference_free_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU) QA_CONFIG=configs/qa_formation.json
-	$(MAKE) inference_free_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU) QA_CONFIG=configs/qa_commentary.json
-	$(MAKE) inference_free_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU) QA_CONFIG=configs/qa_first_action.json
+	mkdir -p $(RUN_DIR)/phase4
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path $(ACTION_CKPT) \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_csv $(RUN_DIR)/phase4/placeholder/results.csv \
+	    --context_len $(SD_CONTEXT) \
+	    --max_games $(MAX_GAMES) \
+	    --repetition_penalty $(REP_PENALTY) \
+	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    --qformer_heads $(QFORMER_HEADS) \
+	    --tasks none \
+	    --free_configs configs/qa_formation.json configs/qa_commentary.json configs/qa_first_action.json \
+	    --phase4_base_dir $(RUN_DIR)/phase4 \
+	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(RUN_DIR)/phase4/inference.log
 
 run_pipeline:
 	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
@@ -582,6 +597,7 @@ run_from_phase2:
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
 	    REGRESSION_CKPT=$(SHARED_PHASE1_CKPT)
 	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+	$(MAKE) inference_phase4_all RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU)
 
 run_curriculum_from_phase2:
 	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
@@ -589,6 +605,7 @@ run_curriculum_from_phase2:
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
 	    REGRESSION_CKPT=$(SHARED_PHASE1_CKPT)
 	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
+	$(MAKE) inference_phase4_all RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU)
 
 train_contrastive_phase2:
 	mkdir -p $(PHASE2_DIR)
@@ -610,6 +627,7 @@ run_contrastive_from_phase2:
 	$(MAKE) train_contrastive_phase2 RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES)
 	$(MAKE) inference_soccer_qa RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) \
 	    ACTION_CKPT=$(CONTRASTIVE_CKPT)
+	$(MAKE) inference_phase4_all RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU)
 
 patch_action_frames:
 	python SoccerNet_script/patch_action_frames.py \
@@ -644,6 +662,8 @@ run_from_phase1_5:
 	    LAMBDA_SLOT=$(LAMBDA_SLOT) EPOCHS_PHASE2=$(EPOCHS_PHASE2)
 	$(MAKE) inference_soccer_qa \
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT)
+	$(MAKE) inference_phase4_all \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) SENTENCE_FORMAT=$(SENTENCE_FORMAT) GPU=$(GPU)
 
 check:
 	python -m py_compile tracking/train_action_alignment.py
