@@ -142,7 +142,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_contrastive_phase2 run_contrastive_from_phase2 \
         patch_action_frames train_phase1_5 train_phase1_5_shared run_from_phase1_5 \
         inference_free_qa inference_phase4_all generate_qa_data \
-        train_phase2 train_phase2_5 run_ablation \
+        train_phase2 train_phase2_5 run_ablation run_inference \
         check smoke smoke_phase2 clean
 
 build:
@@ -729,6 +729,20 @@ run_ablation:
 	$(MAKE) inference_phase4_all \
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
 	    ACTION_CKPT=$(PHASE2_5_CKPT) \
+	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
+
+# Phase 3 + Phase 4 のみ実行 (Phase 2 共有チェックポイント使用、Phase 2.5 スキップ)
+# 使い方: make run_inference USE_PHASE1_5=0 INSTRUCTION_DIVERSE=1 USE_LINEAR=0 GPU=0
+run_inference:
+	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
+	@echo "=== Inference only: $(PHASE2_TAG) (ckpt: $(SHARED_PHASE2_CKPT)) ==="
+	$(MAKE) inference_soccer_qa \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
+	    ACTION_CKPT=$(SHARED_PHASE2_CKPT) \
+	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
+	$(MAKE) inference_phase4_all \
+	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
+	    ACTION_CKPT=$(SHARED_PHASE2_CKPT) \
 	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
 
 run_from_phase1_5:
