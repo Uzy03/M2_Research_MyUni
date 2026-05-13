@@ -61,11 +61,13 @@ class matchvoice_model_all_blocks(nn.Module):
                  use_ans_token = False,
                  qformer_heads = 1,
                  use_chat_template = False,
+                 use_linear = False,
                  **kwargs,
                  ):
         super().__init__()
         if len(kwargs):
             print(f'kwargs not used: {kwargs}')
+        self.use_linear = use_linear
         # self.device = device
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_ckpt)
         self.tokenizer.add_tokens(["[PLAYER]","[TEAM]","[COACH]","[REFEREE]","([TEAM])"], special_tokens=True)
@@ -110,30 +112,33 @@ class matchvoice_model_all_blocks(nn.Module):
             self.visual_encoder.load_state_dict(new_state_dict, strict=False)
 
         # Initialize video Q-former
-        self.video_Qformer,self.video_query_tokens = self.init_video_Qformer(num_query_token = num_video_query_token,
-                                                                             vision_width=num_features,
-                                                                             num_hidden_layers =2)
-        self.video_Qformer.cls = None
-        self.video_Qformer.bert.embeddings.word_embeddings = None
-        self.video_Qformer.bert.embeddings.position_embeddings = None
-        for layer in self.video_Qformer.bert.encoder.layer:
-            layer.output = None
-            layer.intermediate = None
+        if not self.use_linear:
+            self.video_Qformer, self.video_query_tokens = self.init_video_Qformer(num_query_token = num_video_query_token,
+                                                                                  vision_width=num_features,
+                                                                                  num_hidden_layers =2)
+            self.video_Qformer.cls = None
+            self.video_Qformer.bert.embeddings.word_embeddings = None
+            self.video_Qformer.bert.embeddings.position_embeddings = None
+            for layer in self.video_Qformer.bert.encoder.layer:
+                layer.output = None
+                layer.intermediate = None
 
-        self.qformer_heads = qformer_heads
-        if qformer_heads > 1:
-            assert num_video_query_token % qformer_heads == 0, \
-                f"num_video_query_token ({num_video_query_token}) must be divisible by qformer_heads ({qformer_heads})"
-            tokens_per_head = num_video_query_token // qformer_heads
-            qf_hidden = self.video_Qformer.config.hidden_size
-            self.video_query_tokens = nn.Parameter(
-                torch.zeros(qformer_heads, tokens_per_head, qf_hidden).normal_(0, 0.02)
-            )
-
+            self.qformer_heads = qformer_heads
+            if qformer_heads > 1:
+                assert num_video_query_token % qformer_heads == 0, \
+                    f"num_video_query_token ({num_video_query_token}) must be divisible by qformer_heads ({qformer_heads})"
+                tokens_per_head = num_video_query_token // qformer_heads
+                qf_hidden = self.video_Qformer.config.hidden_size
+                self.video_query_tokens = nn.Parameter(
+                    torch.zeros(qformer_heads, tokens_per_head, qf_hidden).normal_(0, 0.02)
+                )
         # llama projection
-        self.llama_proj = nn.Linear(
-            self.video_Qformer.config.hidden_size, self.llama_model.config.hidden_size
-        )
+        if self.use_linear:
+            self.llama_proj = nn.Linear(num_features, self.llama_model.config.hidden_size)
+        else:
+            self.llama_proj = nn.Linear(
+                self.video_Qformer.config.hidden_size, self.llama_model.config.hidden_size
+            )
         # video frame positional embedding
         self.video_frame_position_embedding = nn.Embedding(max_frame_pos, num_features)
         self.window = window
@@ -227,29 +232,33 @@ class matchvoice_model_all_blocks(nn.Module):
 
         frame_hidden_state =  einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h',b=batch_size,t=time_length)
         frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(frame_hidden_state)
-        if self.qformer_heads > 1:
-            head_outputs = []
-            for h in range(self.qformer_heads):
-                q_h = self.video_query_tokens[h].unsqueeze(0).expand(batch_size, -1, -1).to(frame_hidden_state.device)
-                out_h = self.video_Qformer.bert(
-                    query_embeds=q_h,
+        if self.use_linear:
+            # (B, T*Q, H) -> mean pool -> (B, H) -> llama_proj -> (B, 1, llm_hidden)
+            video_feat = frame_hidden_state.mean(dim=1)
+            inputs_llama = self.llama_proj(video_feat).unsqueeze(1)
+        else:
+            if self.qformer_heads > 1:
+                head_outputs = []
+                for h in range(self.qformer_heads):
+                    q_h = self.video_query_tokens[h].unsqueeze(0).expand(batch_size, -1, -1).to(frame_hidden_state.device)
+                    out_h = self.video_Qformer.bert(
+                        query_embeds=q_h,
+                        encoder_hidden_states=frame_hidden_state,
+                        encoder_attention_mask=frame_atts,
+                        return_dict=True,
+                    )
+                    head_outputs.append(out_h.last_hidden_state)
+                video_hidden = torch.cat(head_outputs, dim=1)
+            else:
+                video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(frame_hidden_state.device)
+                video_query_output = self.video_Qformer.bert(
+                    query_embeds=video_query_tokens,
                     encoder_hidden_states=frame_hidden_state,
                     encoder_attention_mask=frame_atts,
                     return_dict=True,
                 )
-                head_outputs.append(out_h.last_hidden_state)
-            video_hidden = torch.cat(head_outputs, dim=1)
-        else:
-            video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(frame_hidden_state.device)
-            video_query_output = self.video_Qformer.bert(
-                query_embeds=video_query_tokens,
-                encoder_hidden_states=frame_hidden_state,
-                encoder_attention_mask=frame_atts,
-                return_dict=True,
-            )
-            video_hidden = video_query_output.last_hidden_state
-
-        inputs_llama = self.llama_proj(video_hidden)
+                video_hidden = video_query_output.last_hidden_state
+            inputs_llama = self.llama_proj(video_hidden)
         if self.inference:
             return self.generate_text(inputs_llama)
 

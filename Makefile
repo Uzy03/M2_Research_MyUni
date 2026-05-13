@@ -43,7 +43,8 @@ RUN_TS     ?= $(shell date +%Y%m%d%H%M)
 RUN_DIR    ?= checkpoints/$(RUN_TS)
 PHASE1_DIR       = $(RUN_DIR)/phase1
 # Phase2タグ: init重み(1 or 15) × 指示多様化(0 or 1) でディレクトリを区別
-PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)
+USE_LINEAR            ?= 0
+PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)
 SHARED_PHASE1_DIR     = checkpoints/phase1
 SHARED_PHASE1_CKPT    = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
 SHARED_PHASE1_5_DIR   ?= checkpoints/phase1_5
@@ -500,6 +501,7 @@ train_action_alignment:
 	    $(if $(filter-out 0,$(LAMBDA_SLOT)),--lambda_slot $(LAMBDA_SLOT),) \
 	    $(if $(filter 1,$(OPEN_ENCODER)),--open_visual_encoder --lr_encoder $(LR_ENCODER),) \
 	    $(if $(filter 1,$(USE_LLM_QA)),--use_llm_qa,) \
+	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 

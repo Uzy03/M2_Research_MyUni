@@ -297,6 +297,8 @@ def main():
                         help='open_visual_encoder 時の Encoder 専用学習率（デフォルト: 1e-5）')
     parser.add_argument("--use_llm_qa", action="store_true",
                         help="MultiTaskDataset の llm_qa フィールドを学習に使う")
+    parser.add_argument('--use_linear', action='store_true',
+                        help='Q-FormerのかわりにLinear projectionを使う')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -349,6 +351,7 @@ def main():
         qformer_heads=qformer_heads,
         use_chat_template=args.use_chat_template,
         open_visual_encoder=args.open_visual_encoder,
+        use_linear=args.use_linear,
         num_players=23,
         in_features=5,
         d_model=256,

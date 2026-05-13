@@ -18,7 +18,7 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         samples['mask']: (B, T, N) - マスク (オプション)
     """
     
-    def __init__(self, num_players=23, in_features=5, d_model=256, **kwargs):
+    def __init__(self, num_players=23, in_features=5, d_model=256, use_linear=False, **kwargs):
         """
         Args:
             num_players (int): 選手数（デフォルト: 23）
@@ -33,6 +33,8 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         # visual_encoder を初期化させないために visual_encoder_checkpoint を設定
         kwargs.setdefault('visual_encoder_checkpoint', 'NONE')
         
+        # use_linear を kwargs に追加
+        kwargs['use_linear'] = use_linear
         # 親クラスの __init__ を呼ぶ
         super().__init__(**kwargs)
         
@@ -115,29 +117,32 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         
         frame_hidden_state = einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h', b=batch_size, t=time_length)
         frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(frame_hidden_state)
-        if self.qformer_heads > 1:
-            head_outputs = []
-            for h in range(self.qformer_heads):
-                q_h = self.video_query_tokens[h].unsqueeze(0).expand(batch_size, -1, -1).to(frame_hidden_state.device)
-                out_h = self.video_Qformer.bert(
-                    query_embeds=q_h,
+        if self.use_linear:
+            video_feat = frame_hidden_state.mean(dim=1)   # (B, H)
+            inputs_llama = self.llama_proj(video_feat).unsqueeze(1)  # (B, 1, llm_hidden)
+        else:
+            if self.qformer_heads > 1:
+                head_outputs = []
+                for h in range(self.qformer_heads):
+                    q_h = self.video_query_tokens[h].unsqueeze(0).expand(batch_size, -1, -1).to(frame_hidden_state.device)
+                    out_h = self.video_Qformer.bert(
+                        query_embeds=q_h,
+                        encoder_hidden_states=frame_hidden_state,
+                        encoder_attention_mask=frame_atts,
+                        return_dict=True,
+                    )
+                    head_outputs.append(out_h.last_hidden_state)
+                video_hidden = torch.cat(head_outputs, dim=1)
+            else:
+                video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(frame_hidden_state.device)
+                video_query_output = self.video_Qformer.bert(
+                    query_embeds=video_query_tokens,
                     encoder_hidden_states=frame_hidden_state,
                     encoder_attention_mask=frame_atts,
                     return_dict=True,
                 )
-                head_outputs.append(out_h.last_hidden_state)
-            video_hidden = torch.cat(head_outputs, dim=1)
-        else:
-            video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(frame_hidden_state.device)
-            video_query_output = self.video_Qformer.bert(
-                query_embeds=video_query_tokens,
-                encoder_hidden_states=frame_hidden_state,
-                encoder_attention_mask=frame_atts,
-                return_dict=True,
-            )
-            video_hidden = video_query_output.last_hidden_state
-        
-        inputs_llama = self.llama_proj(video_hidden)
+                video_hidden = video_query_output.last_hidden_state
+            inputs_llama = self.llama_proj(video_hidden)
 
         slot_loss = None
         if lambda_slot > 0.0 and not validating and not self.inference:
@@ -259,14 +264,18 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         frame_atts = torch.ones(frame_hidden_state.size()[:-1],
                                 dtype=torch.long).to(frame_hidden_state)
 
-        video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(
-            frame_hidden_state.device)
-        video_query_output = self.video_Qformer.bert(
-            query_embeds=video_query_tokens,
-            encoder_hidden_states=frame_hidden_state,
-            encoder_attention_mask=frame_atts,
-            return_dict=True,
-        )
-        video_hidden = video_query_output.last_hidden_state
-        inputs_llama = self.llama_proj(video_hidden)  # (B, 32, llm_hidden)
+        if self.use_linear:
+            video_feat = frame_hidden_state.mean(dim=1)
+            inputs_llama = self.llama_proj(video_feat).unsqueeze(1)
+        else:
+            video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(
+                frame_hidden_state.device)
+            video_query_output = self.video_Qformer.bert(
+                query_embeds=video_query_tokens,
+                encoder_hidden_states=frame_hidden_state,
+                encoder_attention_mask=frame_atts,
+                return_dict=True,
+            )
+            video_hidden = video_query_output.last_hidden_state
+            inputs_llama = self.llama_proj(video_hidden)
         return inputs_llama
