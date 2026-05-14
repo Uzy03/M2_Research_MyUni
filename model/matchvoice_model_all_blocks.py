@@ -14,13 +14,17 @@ import sys
 import io
 from peft import get_peft_model, LoraConfig
 
+_EOS_STRINGS = ['<|end_of_text|>', '<|eot_id|>']
+
 def process_output_tokens(predict_model, tokens):
     output_texts = []
     for output_token in tokens:
         output_text = predict_model.tokenizer.decode(output_token)
-        end_token_index = output_text.find('<|end_of_text|>')
-        if end_token_index != -1:
-            output_text = output_text[:end_token_index]
+        for eos in _EOS_STRINGS:
+            idx = output_text.find(eos)
+            if idx != -1:
+                output_text = output_text[:idx]
+                break
         output_texts.append(output_text)
     return output_texts
 
