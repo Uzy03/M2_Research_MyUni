@@ -9,6 +9,7 @@ import warnings
 from pathlib import Path
 
 import torch
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from rouge_score import rouge_scorer as rs
 from torch.utils.data import DataLoader, Subset
 
@@ -137,6 +138,68 @@ def evaluate_metrics(model, dataset, device, max_eval=200, seed=0, allowed_tasks
     return {
         t: (sum(s) / len(s) if s else float('nan'))
         for t, s in task_scores.items()
+    }
+
+
+def evaluate_qa_metrics(model, dataset, device, max_eval=200, seed=0):
+    """Generate predictions and compute QA metrics (ROUGE-L, BLEU)."""
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    warnings.filterwarnings("ignore", message=".*attention mask.*")
+    model.eval()
+    
+    # Collect all LLM QA items
+    qa_indices = []
+    for idx in range(len(dataset)):
+        item = dataset[idx]
+        feat, msk, instruction, answer, task_name, seq_id, _ = item
+        if task_name.startswith("llm_"):
+            qa_indices.append(idx)
+    
+    # Sample if exceeds max_eval
+    rng = random.Random(seed)
+    if len(qa_indices) > max_eval:
+        qa_indices = rng.sample(qa_indices, max_eval)
+    
+    rouge_scores = []
+    bleu_scores = []
+    
+    with torch.no_grad():
+        for idx in qa_indices:
+            item = dataset[idx]
+            feat, msk, instruction, answer, task_name, seq_id, _ = item
+            model.instruction = instruction
+            samples = {
+                "tracking":       feat.unsqueeze(0).to(device),
+                "mask":           msk.unsqueeze(0).to(device),
+                "caption_text":   [answer],
+                "video_path":     [seq_id],
+                "labels":         torch.zeros(1, 1, dtype=torch.long).to(device),
+                "attention_mask": torch.ones(1, 1, dtype=torch.long).to(device),
+                "input_ids":      torch.zeros(1, 1, dtype=torch.long).to(device),
+            }
+            generated_list, _, _ = model(samples, validating=True)
+            gen = generated_list[0] if generated_list else ""
+            
+            # Compute ROUGE-L
+            if answer.strip():
+                rouge_score = _rouge_scorer.score(answer, gen)['rougeL'].fmeasure
+                rouge_scores.append(rouge_score)
+            
+            # Compute BLEU
+            if answer.strip() and gen.strip():
+                bleu_score = sentence_bleu(
+                    [answer.split()],
+                    gen.split(),
+                    smoothing_function=SmoothingFunction().method1
+                )
+                bleu_scores.append(bleu_score)
+    
+    model.train()
+    
+    return {
+        "rouge_l": sum(rouge_scores) / len(rouge_scores) if rouge_scores else float('nan'),
+        "bleu": sum(bleu_scores) / len(bleu_scores) if bleu_scores else float('nan'),
+        "n": len(qa_indices),
     }
 
 
@@ -502,6 +565,10 @@ def main():
         for name, score in test_r.items():
             metric = 'f1' if name == 'action' else 'rouge_l'
             print(f"  Test {name} {metric}={score:.4f}")
+
+        if args.use_llm_qa:
+            qa_r = evaluate_qa_metrics(model, test_dataset, args.device)
+            print(f"  Test QA  rouge_l={qa_r['rouge_l']:.4f}  bleu={qa_r['bleu']:.4f}  (n={qa_r['n']})")
 
         print("\n" + "=" * 60)
         print("Step 7: チェックポイント保存済み（best val epoch）")
