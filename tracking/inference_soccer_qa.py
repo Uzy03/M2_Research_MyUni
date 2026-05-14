@@ -7,6 +7,7 @@ import logging
 import os
 import random
 import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -56,6 +57,8 @@ def parse_args():
     parser.add_argument("--seed",        type=int, default=42)
     parser.add_argument('--repetition_penalty', type=float, default=1.0)
     parser.add_argument('--max_new_tokens',     type=int,   default=128)
+    parser.add_argument('--num_beams', type=int, default=5,
+                        help='ビームサーチのビーム数（1=greedy）')
     parser.add_argument('--use_ans_token', action='store_true',
                         help="Insert <ANS> token between instruction and answer")
     parser.add_argument('--qformer_heads', type=int, default=1,
@@ -96,7 +99,7 @@ def load_clips(json_path, max_samples, seed, max_games=0):
 
 
 def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1,
-               use_chat_template=False):
+               use_chat_template=False, num_beams=5):
     model = matchvoice_model_tracking(
         load_checkpoint=False,
         num_features=768,
@@ -123,6 +126,7 @@ def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1
     model.to(device)
     model.eval()
     model.use_logits_filter = False
+    model._num_beams = num_beams
     return model
 
 
@@ -152,10 +156,11 @@ def main():
     model = load_model(args.ckpt_path, args.llm_ckpt, args.device,
                        use_ans_token=args.use_ans_token,
                        qformer_heads=args.qformer_heads,
-                       use_chat_template=args.use_chat_template)
+                       use_chat_template=args.use_chat_template,
+                       num_beams=args.num_beams)
     model._repetition_penalty = args.repetition_penalty
     model._max_new_tokens     = args.max_new_tokens
-    print(f"Model ready on {args.device}")
+    print(f"Model ready on {args.device}  num_beams={args.num_beams}")
 
     if args.tasks and args.tasks.lower() == 'none':
         active_tasks = []
@@ -168,6 +173,7 @@ def main():
     task_scores = {t['name']: [] for t in active_tasks}
     rows = []
 
+    t_start = time.time()
     for i, entry in enumerate(clips):
         npy_path = base_dir / entry['npy_path']
         if not npy_path.exists():
@@ -218,6 +224,11 @@ def main():
 
         if (i + 1) % 5 == 0:
             print(f"  [{i+1}/{len(clips)}] processed")
+
+    elapsed = time.time() - t_start
+    n_clips = sum(1 for e in clips if (base_dir / e['npy_path']).exists())
+    print(f"\n=== Timing ===")
+    print(f"  total: {elapsed:.1f}s  per_clip: {elapsed/max(n_clips,1):.2f}s  num_beams={args.num_beams}")
 
     # Summary
     print("\n=== Results ===")

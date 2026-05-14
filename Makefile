@@ -68,6 +68,7 @@ OPEN_LORA       ?= 0
 EVAL_INTERVAL   ?= 5
 REP_PENALTY     ?= 1.3
 MAX_NEW_TOKENS  ?= 40
+NUM_BEAMS       ?= 5
 LORA_RANK       ?= 32
 USE_ANS_TOKEN   ?= 0
 QFORMER_HEADS   ?= 1
@@ -556,6 +557,7 @@ inference_soccer_qa:
 	    --max_games $(MAX_GAMES) \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    --num_beams $(NUM_BEAMS) \
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
@@ -577,6 +579,7 @@ inference_free_qa:
 	    --max_games $(MAX_GAMES) \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    --num_beams $(NUM_BEAMS) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    --tasks none \
 	    $(if $(QA_CONFIG),--free_config $(QA_CONFIG),) \
@@ -595,6 +598,7 @@ inference_phase4_all:
 	    --max_games $(MAX_GAMES) \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    --num_beams $(NUM_BEAMS) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    --tasks none \
 	    --free_configs configs/qa_formation.json configs/qa_commentary.json configs/qa_first_action.json \
@@ -818,6 +822,7 @@ smoke:
 	    --max_samples 50 \
 	    --repetition_penalty $(REP_PENALTY) \
 	    --max_new_tokens $(MAX_NEW_TOKENS) \
+	    --num_beams $(NUM_BEAMS) \
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \

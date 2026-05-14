@@ -327,7 +327,7 @@ class matchvoice_model_all_blocks(nn.Module):
             attention_mask=attn_mask,
             pad_token_id=self.tokenizer.eos_token_id,
             max_new_tokens=self._max_new_tokens,
-            num_beams=5,
+            num_beams=getattr(self, '_num_beams', 5),
             do_sample=True,
             min_length=5,
             top_p=0.9,
