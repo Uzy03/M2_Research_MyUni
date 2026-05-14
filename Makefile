@@ -51,7 +51,11 @@ SHARED_PHASE1_5_DIR   ?= checkpoints/phase1_5
 SHARED_PHASE1_5_CKPT  = $(SHARED_PHASE1_5_DIR)/encoder_contrastive.pth
 SHARED_PHASE2_DIR     = checkpoints/phase2_$(PHASE2_TAG)
 SHARED_PHASE2_CKPT    = $(SHARED_PHASE2_DIR)/action_alignment.pth
+SHARED_PHASE2_5_DIR   = checkpoints/phase2_5_$(PHASE2_TAG)
+SHARED_PHASE2_5_CKPT  = $(SHARED_PHASE2_5_DIR)/action_alignment.pth
 USE_PHASE1_5          ?= 0
+USE_PHASE2_5          ?= 0
+INFERENCE_CKPT         = $(if $(filter 1,$(USE_PHASE2_5)),$(SHARED_PHASE2_5_CKPT),$(SHARED_PHASE2_CKPT))
 PHASE2_INIT_CKPT      = $(if $(filter 1,$(USE_PHASE1_5)),$(SHARED_PHASE1_5_CKPT),$(SHARED_PHASE1_CKPT))
 # アブレーション用 (RUN_TS ベース)
 PHASE2_DIR       = $(RUN_DIR)/phase2_$(PHASE2_TAG)
@@ -143,7 +147,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_contrastive_phase2 run_contrastive_from_phase2 \
         patch_action_frames train_phase1_5 train_phase1_5_shared run_from_phase1_5 \
         inference_free_qa inference_phase4_all generate_qa_data \
-        train_phase2 train_phase2_5 run_ablation run_inference \
+        train_phase2 train_phase2_5 train_phase2_5_shared run_ablation run_inference \
         check smoke smoke_phase2 clean
 
 build:
@@ -718,6 +722,13 @@ train_phase2_5:
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_5_DIR)/train.log
 
+# Phase 2.5 共有チェックポイント保存 (phase2 と同じイメージ)
+# 使い方: make train_phase2_5_shared USE_LINEAR=0 INSTRUCTION_DIVERSE=1 SENTENCE_FORMAT=1 GPU=0
+train_phase2_5_shared:
+	$(MAKE) train_phase2_5 \
+	    PHASE2_5_DIR=$(SHARED_PHASE2_5_DIR) \
+	    PHASE2_5_CKPT=$(SHARED_PHASE2_5_CKPT)
+
 # アブレーション: Phase 2.5 以降を一括実行 (Phase 2 は train_phase2 で事前完了が前提)
 # 使い方: make run_ablation USE_PHASE1_5=1 INSTRUCTION_DIVERSE=1 GPU=0 MAX_GAMES=5
 run_ablation:
@@ -735,18 +746,19 @@ run_ablation:
 	    ACTION_CKPT=$(PHASE2_5_CKPT) \
 	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
 
-# Phase 3 + Phase 4 のみ実行 (Phase 2 共有チェックポイント使用、Phase 2.5 スキップ)
+# Phase 3 + Phase 4 のみ実行 (USE_PHASE2_5=0: Phase2 ckpt, USE_PHASE2_5=1: Phase2.5 ckpt)
 # 使い方: make run_inference USE_PHASE1_5=0 INSTRUCTION_DIVERSE=1 USE_LINEAR=0 GPU=0
+#         make run_inference USE_PHASE2_5=1 USE_LINEAR=0 INSTRUCTION_DIVERSE=1 GPU=0
 run_inference:
 	$(eval RUN_TS := $(shell date +%Y%m%d%H%M))
-	@echo "=== Inference only: $(PHASE2_TAG) (ckpt: $(SHARED_PHASE2_CKPT)) ==="
+	@echo "=== Inference only: $(PHASE2_TAG) (ckpt: $(INFERENCE_CKPT)) ==="
 	$(MAKE) inference_soccer_qa \
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
-	    ACTION_CKPT=$(SHARED_PHASE2_CKPT) \
+	    ACTION_CKPT=$(INFERENCE_CKPT) \
 	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
 	$(MAKE) inference_phase4_all \
 	    RUN_TS=$(RUN_TS) MAX_GAMES=$(MAX_GAMES) GPU=$(GPU) \
-	    ACTION_CKPT=$(SHARED_PHASE2_CKPT) \
+	    ACTION_CKPT=$(INFERENCE_CKPT) \
 	    SENTENCE_FORMAT=$(SENTENCE_FORMAT)
 
 run_from_phase1_5:
