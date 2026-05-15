@@ -6,71 +6,57 @@
 
 ---
 
-## 全実験サマリー
+## スコア一覧
 
-> Free QA 評価基準: ○=action・異ドメイン両方正確 / △A=action正確・異ドメイン沈黙 / △B=形式追従・内容幻覚 / ×=全件空文字またはエコー
+> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。P2.5 ROUGE-L/BLEU は QA テスト分割の生成評価。
 
-| 実験タグ | init | hub | Phase2.5 | Phase2 F1↑ | Phase3 F1↑ | Free QA | 備考 |
+| init | hub | P2.5 | P2 ckpt | P3 run | P2 F1↑ | P2.5 F1↑ | P2.5 ROUGE-L↑ | P2.5 BLEU↑ | P3 F1↑ |
+|---|---|---|---|---|---|---|---|---|---|
+| Phase1 | Q-Former | なし | phase2_init1_div1_hubqformer | 202605141356 | 0.7533 | - | - | - | **0.6691** |
+| Phase1 | Q-Former | あり | phase2_5_init1_div1_hubqformer | 202605142333 | 0.7533 | 0.7881 | 0.3042 | 0.1165 | 0.6604 |
+| Phase1 | Linear | なし | phase2_init1_div1_hublinear | 202605141507 | 0.7019 | - | - | - | 0.0000 |
+| Phase1 | Linear | あり | phase2_5_init1_div1_hublinear | 202605142214 | 0.7019 | **0.9351** | 0.3083 | 0.1187 | **0.6775** |
+| Phase1.5 | Q-Former | なし | phase2_init15_div1_hubqformer | 202605141535 | 0.6116 | - | - | - | 0.6004 |
+| Phase1.5 | Q-Former | あり | phase2_5_init15_div1_hubqformer | - | 0.6116 | - | - | - | - |
+| Phase1.5 | Linear | なし | phase2_init15_div1_hublinear | 202605141549 | 0.6516 | - | - | - | 0.0000 |
+| Phase1.5 | Linear | あり | phase2_5_init15_div1_hublinear | - | 0.6516 | - | - | - | - |
+
+---
+
+## Free QA 品質
+
+> ○=正確 / △=概ね正確だが形式に問題あり / △B=形式追従・内容幻覚 / ×=空文字・崩壊・定型文固定
+
+| init | hub | P2.5 | P3 run | formation | commentary | first_action | 総合 |
 |---|---|---|---|---|---|---|---|
-| init1_div1_hubqformer | Phase1 | Q-Former | なし | - | **0.6691** | △A | |
-| init1_div1_hubqformer | Phase1 | Q-Former | あり | - | - | - | |
-| init1_div1_hublinear | Phase1 | Linear | なし | - | 0.0000 | × | 繰り返し崩壊 |
-| init1_div1_hublinear | Phase1 | Linear | あり | - | - | - | |
-| init15_div1_hubqformer | Phase1.5 | Q-Former | なし | - | 0.6004 | × | Free QA 空文字 |
-| init15_div1_hubqformer | Phase1.5 | Q-Former | あり | - | - | - | |
-| init15_div1_hublinear | Phase1.5 | Linear | なし | - | 0.0000 | - | 繰り返し崩壊 |
-| init15_div1_hublinear | Phase1.5 | Linear | あり | - | - | - | |
+| Phase1 | Q-Former | なし | 202605141356 | - | - | ○ | △A |
+| Phase1 | Q-Former | あり | 202605142333 | × | △B | △ | △B |
+| Phase1 | Linear | なし | 202605141507 | - | - | × | × |
+| Phase1 | Linear | あり | 202605142214 | △ | **○** | △ | **○** |
+| Phase1.5 | Q-Former | なし | 202605141535 | - | - | × | × |
+| Phase1.5 | Q-Former | あり | - | - | - | - | - |
+| Phase1.5 | Linear | なし | 202605141549 | - | - | - | - |
+| Phase1.5 | Linear | あり | - | - | - | - | - |
 
 ---
 
-## Phase 2: 学習後テスト
+## 考察
 
-| 実験タグ | best_val (epoch) | Test f1_action↑ |
-|---|---|---|
-| init1_div1_hubqformer | - | - |
-| init1_div1_hublinear | - | - |
-| init15_div1_hubqformer | - | - |
-| init15_div1_hublinear | - | - |
+### Linear hub の崩壊と復活
 
----
+- Phase2のみ（actionラベル学習）では hublinear の P3 F1=0.0000。出力は "and learn, and learn..." の繰り返し。
+- 原因: mean pool で (B, T, 768) → (B, 768) に潰すと視覚情報がほぼ消え、LLM がハルシネーションループに入る。
+- **Phase2.5 QA学習を加えると完全復活**（F1: 0.0000 → 0.6775）。QA多様データが繰り返し崩壊への正則化として機能した可能性。
 
-## Phase 3: 推論（学習外指示文）
+### 以前の実験との比較（docs/result/README.md）
 
-| 実験タグ | Phase2.5 | Inference f1_action↑ | Free QA (qa_action.json) |
-|---|---|---|---|
-| init1_div1_hubqformer | なし | **0.6691** (47.1s, 2.35s/clip) | - |
-| init1_div1_hubqformer | あり | - | - |
-| init1_div1_hublinear | なし | 0.0000 (134.8s, 6.74s/clip) | - |
-| init1_div1_hublinear | あり | - | - |
-| init15_div1_hubqformer | なし | 0.6004 (35.8s, 1.79s/clip) | - |
-| init15_div1_hubqformer | あり | - | - |
-| init15_div1_hublinear | なし | 0.0000 (127.3s, 6.36s/clip) | - |
-| init15_div1_hublinear | あり | - | - |
+- 以前の全実験で commentary が○になったことは一度もない（LoRAなし→全件定型文、LoRA rank=4→全件幻覚）
+- **今回 hublinear + Phase2.5（LoRAなし）が commentary 初の○を達成**
+- Phase2.5 QA学習が「トラッキング → 自由文生成」のブレークスルーをもたらした
 
----
+### hubqformer vs hublinear（Phase2.5あり）
 
-## Phase 4: Free QA スタイル汎化
-
-| 実験タグ | Phase2.5 | formation | commentary | first_action |
-|---|---|---|---|---|
-| init1_div1_hubqformer | なし | - | - | ○ (action文生成OK) |
-| init1_div1_hubqformer | あり | - | - | - |
-| init1_div1_hublinear | なし | - | - | × (繰り返し崩壊) |
-| init1_div1_hublinear | あり | - | - | - |
-| init15_div1_hubqformer | なし | - | - | × (空文字列) |
-| init15_div1_hubqformer | あり | - | - | - |
-| init15_div1_hublinear | なし | - | - | - (未確認) |
-| init15_div1_hublinear | あり | - | - | - |
-
----
-
-## 補足・考察
-
-### 2026-05-14: Linear hub 完全崩壊
-
-- **hublinear** は Phase 3 F1=0.0000。出力は "and learn, and learn, and learn..." の繰り返しループ。
-- 原因: TrackingEncoder 出力 (B, T, 768) を mean(dim=1) で (B, 768) に潰すと、視覚情報がほぼ消える。LLM が visual token から手がかりを得られず hallucination ループに入る。
-- **hublinear も学習時間が長い** (6.74s/clip vs Q-Former 2.35s/clip) のは、max_new_tokens まで繰り返しを生成しているため。
-- **hubqformer** は正常。init1 > init15 (0.6691 vs 0.6004)。
-- Phase 1.5 init (init15_hubqformer) は Phase 3 F1 は出るが **Phase 4 Free QA が空文字列**。Phase 2 の action 学習に過適合している可能性。
-- **結論**: Linear hub は採用不可。Q-Former が必須。LLaVA の Linear projection が機能するのは画像の密な特徴量があるからであり、トラッキング座標のような疎な時系列には適さない。
+- P3 F1: hublinear 0.6775 > hubqformer 0.6604（わずかに hublinear が上）
+- Free QA: hublinear ○ vs hubqformer △B（hublinear が大きく上回る）
+- hubqformer + Phase2.5 では commentary にアクションラベル形式が混入（"performing trap, pass, clearance..."）、formation で別タスク回答が混入するなどフォーマット退行が起きている
+- **現時点のベスト構成: Phase1 + Linear + Phase2.5**

@@ -92,7 +92,6 @@ EPOCHS_PHASE1_5       ?= 20
 WINDOW_SIZE           ?= 2
 TEMPERATURE           ?= 0.07
 SOCCERDATA_DIR        ?= /user/arch/ujihara/SoccerData
-LLM_MODEL             ?= meta-llama/Meta-Llama-3-8B-Instruct
 USE_LLM_QA            ?= 0
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
@@ -670,7 +669,7 @@ patch_action_frames:
 generate_qa_data:
 	CUDA_VISIBLE_DEVICES=$(GPU) python SoccerNet_script/generate_qa_data.py \
 	    --json_path $(SD_JSON) \
-	    --model $(LLM_MODEL) \
+	    --model meta-llama/Meta-Llama-3-8B-Instruct \
 	    --max_games $(MAX_GAMES) \
 	    --save_interval 10
 
