@@ -63,7 +63,7 @@ def build_judge_prompt(entry):
 
 ## Scoring rules (0 or 1)
 
-RULE 1 — HIGHEST PRIORITY: If the model's response (shown above between triple quotes) is
+RULE 1 — HIGHEST PRIORITY: If the model's response (shown above between double quotes) is
 empty or contains only whitespace, you MUST output score=0. No exceptions.
 
 RULE 2: If the response is a repetition loop (e.g. "and learn, and learn, and learn..."),

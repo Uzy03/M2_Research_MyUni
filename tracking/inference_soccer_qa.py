@@ -17,7 +17,7 @@ from rouge_score import rouge_scorer as rs
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.matchvoice_model_tracking import matchvoice_model_tracking
-from tracking.dataset.multitask_dataset import TASKS, ACTION_VOCAB
+from tracking.dataset.multitask_dataset import TASKS, ACTION_VOCAB, ACTION_NAMES_EN
 
 _rouge = rs.RougeScorer(['rougeL'], use_stemmer=True)
 _ACTION_VOCAB_SET = set(ACTION_VOCAB)
@@ -319,7 +319,7 @@ def main():
                     'clip_id':     entry.get('clip_id', ''),
                     'instruction': free_instruction,
                     'generated':   gen,
-                    'action':      str(entry.get('action_sequence', '')),
+                    'action':      ', '.join(ACTION_NAMES_EN.get(str(a), str(a)) for a in entry.get('action_sequence', [])),
                     'possession':  entry.get('label_possession', ''),
                     'zone':        entry.get('label_zone', ''),
                     'pressure':    entry.get('label_pressure', ''),
