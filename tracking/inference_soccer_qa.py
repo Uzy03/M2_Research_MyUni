@@ -327,7 +327,7 @@ def main():
                 print(f'  [{entry.get("clip_id","")}] {gen[:80]}')
             out_csv_p = out_dir / 'results.csv'
             with open(out_csv_p, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'])
+                writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'], extrasaction='ignore')
                 writer.writeheader()
                 writer.writerows(free_rows)
             json_path = out_csv_p.with_suffix('.json')
