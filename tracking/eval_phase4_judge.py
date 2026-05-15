@@ -47,28 +47,36 @@ def build_judge_prompt(entry):
     instruction = entry.get('instruction', '')
     generated = entry.get('generated', '')
     
-    prompt = f"""You are evaluating a soccer video QA model's output.
+    prompt = f"""You are a strict evaluator of a soccer video QA model's output.
 
-## Clip Context (ground truth labels from tracking data)
-- Actions: {action}
-- Possession: {possession} team
+## Clip Context (from tracking data)
+- Possession: {possession}
 - Zone: {zone}
 - Pressure: {pressure}
+- Action sequence: {action}
 
 ## Question given to model
 {instruction}
 
 ## Model's response
-{generated}
+"{generated}"
 
-## Scoring criteria
-- 3: Accurate and specific (consistent with clip metadata, appropriate format)
-- 2: Mostly accurate but minor format issues or partial
-- 1: Format followed but generic/templated content
-- 0: Empty, garbage, completely off-topic, or repetition loop
+## Scoring rules (0 or 1)
+
+RULE 1 — HIGHEST PRIORITY: If the model's response (shown above between triple quotes) is
+empty or contains only whitespace, you MUST output score=0. No exceptions.
+
+RULE 2: If the response is a repetition loop (e.g. "and learn, and learn, and learn..."),
+output score=0.
+
+RULE 3: If the response is off-topic (e.g. answers a different question than asked),
+output score=0.
+
+RULE 4: If the response is relevant, non-empty, and in an appropriate format for the
+question, output score=1.
 
 Output JSON only (no other text):
-{{"score": <int 0-3>, "reason": "<brief reason>"}}"""
+{{"score": <0 or 1>, "reason": "<one sentence>"}}"""
     return prompt
 
 
@@ -111,8 +119,8 @@ def judge_entry(entry, tokenizer, model, device):
     if json_obj and 'score' in json_obj and 'reason' in json_obj:
         score = int(json_obj['score'])
         reason = str(json_obj['reason'])
-        # スコアを0-3の範囲に制限
-        score = max(0, min(3, score))
+        # スコアを0-1の範囲に制限
+        score = max(0, min(1, score))
     else:
         score = 0
         reason = "parse error"

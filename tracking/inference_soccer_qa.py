@@ -319,10 +319,10 @@ def main():
                     'clip_id':     entry.get('clip_id', ''),
                     'instruction': free_instruction,
                     'generated':   gen,
-                    'action':      entry.get('action', ''),
-                    'possession':  entry.get('possession', ''),
-                    'zone':        entry.get('zone', ''),
-                    'pressure':    entry.get('pressure', ''),
+                    'action':      str(entry.get('action_sequence', '')),
+                    'possession':  entry.get('label_possession', ''),
+                    'zone':        entry.get('label_zone', ''),
+                    'pressure':    entry.get('label_pressure', ''),
                 })
                 print(f'  [{entry.get("clip_id","")}] {gen[:80]}')
             out_csv_p = out_dir / 'results.csv'
