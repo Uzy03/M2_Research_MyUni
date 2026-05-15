@@ -147,6 +147,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         patch_action_frames train_phase1_5 train_phase1_5_shared run_from_phase1_5 \
         inference_free_qa inference_phase4_all generate_qa_data \
         train_phase2 train_phase2_5 train_phase2_5_shared run_ablation run_inference \
+        eval_phase4_judge \
         check smoke smoke_phase2 clean
 
 build:
@@ -861,6 +862,15 @@ smoke_phase2:
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/smoke.log
+
+# Phase 4 LLM-as-a-Judge 評価
+# 使い方: make eval_phase4_judge PHASE4_DIR=checkpoints/RUN_TS/phase4_TAG GPU=0
+eval_phase4_judge:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_phase4_judge.py \
+	    --phase4_dir $(PHASE4_DIR) \
+	    --llm_ckpt meta-llama/Meta-Llama-3-8B-Instruct \
+	    --configs qa_formation qa_commentary qa_first_action \
+	    --device $(DEVICE)
 
 clean:
 	docker image prune -f

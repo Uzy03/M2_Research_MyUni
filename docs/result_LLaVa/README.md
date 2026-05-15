@@ -12,7 +12,7 @@
 
 | init | hub | P2.5 | P2 ckpt | P3 run | P2 F1↑ | P2.5 F1↑ | P2.5 ROUGE-L↑ | P2.5 BLEU↑ | P3 F1↑ |
 |---|---|---|---|---|---|---|---|---|---|
-| Phase1 | Q-Former | なし | phase2_init1_div1_hubqformer | 202605141356 | 0.7533 | - | - | - | **0.6691** |
+| Phase1 | Q-Former | なし | phase2_init1_div1_hubqformer | 202605141356 | 0.7533 | - | - | - | 0.6691 |
 | Phase1 | Q-Former | あり | phase2_5_init1_div1_hubqformer | 202605142333 | 0.7533 | 0.7881 | 0.3042 | 0.1165 | 0.6604 |
 | Phase1 | Linear | なし | phase2_init1_div1_hublinear | 202605141507 | 0.7019 | - | - | - | 0.0000 |
 | Phase1 | Linear | あり | phase2_5_init1_div1_hublinear | 202605142214 | 0.7019 | **0.9351** | 0.3083 | 0.1187 | **0.6775** |
@@ -29,13 +29,13 @@
 
 | init | hub | P2.5 | P3 run | formation | commentary | first_action | 総合 |
 |---|---|---|---|---|---|---|---|
-| Phase1 | Q-Former | なし | 202605141356 | - | - | ○ | △A |
+| Phase1 | Q-Former | なし | 202605141356 | × | × (定型文) | × (定型文) | × |
 | Phase1 | Q-Former | あり | 202605142333 | × | △B | △ | △B |
-| Phase1 | Linear | なし | 202605141507 | - | - | × | × |
+| Phase1 | Linear | なし | 202605141507 | × | × (崩壊) | × (崩壊) | × |
 | Phase1 | Linear | あり | 202605142214 | △ | **○** | △ | **○** |
-| Phase1.5 | Q-Former | なし | 202605141535 | - | - | × | × |
+| Phase1.5 | Q-Former | なし | 202605141535 | × (空) | × (定型文) | × (空) | × |
 | Phase1.5 | Q-Former | あり | - | - | - | - | - |
-| Phase1.5 | Linear | なし | 202605141549 | - | - | - | - |
+| Phase1.5 | Linear | なし | 202605141549 | × | × (崩壊) | × (崩壊) | × |
 | Phase1.5 | Linear | あり | - | - | - | - | - |
 
 ---
@@ -59,4 +59,5 @@
 - P3 F1: hublinear 0.6775 > hubqformer 0.6604（わずかに hublinear が上）
 - Free QA: hublinear ○ vs hubqformer △B（hublinear が大きく上回る）
 - hubqformer + Phase2.5 では commentary にアクションラベル形式が混入（"performing trap, pass, clearance..."）、formation で別タスク回答が混入するなどフォーマット退行が起きている
+- **Phase2.5なしは全パターン×**: Q-Formerも含め、質問の種類に関係なくアクション定型文を出力するだけ。Phase2.5が Free QA 汎化の必須条件。
 - **現時点のベスト構成: Phase1 + Linear + Phase2.5**

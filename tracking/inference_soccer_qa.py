@@ -315,13 +315,24 @@ def main():
                 with torch.no_grad():
                     generated_list, _, _ = model(samples, validating=True)
                 gen = generated_list[0] if generated_list else ''
-                free_rows.append({'clip_id': entry.get('clip_id', ''), 'instruction': free_instruction, 'generated': gen})
+                free_rows.append({
+                    'clip_id':     entry.get('clip_id', ''),
+                    'instruction': free_instruction,
+                    'generated':   gen,
+                    'action':      entry.get('action', ''),
+                    'possession':  entry.get('possession', ''),
+                    'zone':        entry.get('zone', ''),
+                    'pressure':    entry.get('pressure', ''),
+                })
                 print(f'  [{entry.get("clip_id","")}] {gen[:80]}')
             out_csv_p = out_dir / 'results.csv'
             with open(out_csv_p, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'])
                 writer.writeheader()
                 writer.writerows(free_rows)
+            json_path = out_csv_p.with_suffix('.json')
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(free_rows, f, ensure_ascii=False, indent=2)
             print(f'Free QA [{config_stem}] saved: {out_csv_p}  ({len(free_rows)} clips)')
 
 
