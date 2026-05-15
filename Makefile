@@ -867,16 +867,21 @@ smoke_phase2:
 # Phase 4 LLM-as-a-Judge 評価
 # LLM ベースライン評価（メタデータのみで Phase 4 と同じ質問に回答）
 # 使い方: make eval_llm_baseline GPU=0
+# CLIP_IDS_FROM: Phase4 results.json のパス（同じクリップで公平比較するため）
+# 例: make eval_llm_baseline CLIP_IDS_FROM=checkpoints/202605151624/phase4_init1_div1_hublinear/qa_formation/results.json GPU=0
+CLIP_IDS_FROM ?=
+
 eval_llm_baseline:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_llm_baseline.py \
 	    --clips_json $(SD_JSON) \
 	    --config_dir configs \
 	    --out_dir checkpoints/llm_baseline \
 	    --llm_ckpt meta-llama/Meta-Llama-3-8B-Instruct \
-	    --device $(DEVICE)
+	    --device $(DEVICE) \
+	    $(if $(CLIP_IDS_FROM),--clip_ids_from $(CLIP_IDS_FROM),)
 
 eval_llm_baseline_judge:
-	$(MAKE) eval_llm_baseline GPU=$(GPU)
+	$(MAKE) eval_llm_baseline GPU=$(GPU) CLIP_IDS_FROM=$(CLIP_IDS_FROM)
 	$(MAKE) eval_phase4_judge PHASE4_DIR=checkpoints/llm_baseline GPU=$(GPU)
 
 # 使い方: make eval_phase4_judge PHASE4_DIR=checkpoints/RUN_TS/phase4_TAG GPU=0

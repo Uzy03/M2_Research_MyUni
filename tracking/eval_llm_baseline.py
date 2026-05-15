@@ -30,6 +30,8 @@ def parse_args():
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--max_clips", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--clip_ids_from", type=str, default=None,
+                        help="Phase4 results.json のパス。指定するとそのclip_idのみ評価する")
     return parser.parse_args()
 
 
@@ -59,7 +61,13 @@ def main():
     with open(args.clips_json, encoding="utf-8") as f:
         clips = json.load(f)
 
-    if args.max_clips and args.max_clips < len(clips):
+    if args.clip_ids_from:
+        with open(args.clip_ids_from, encoding="utf-8") as f:
+            ref = json.load(f)
+        allowed = {r["clip_id"] for r in ref}
+        clips = [c for c in clips if c.get("clip_id") in allowed]
+        print(f"Filtered to {len(clips)} clips from {args.clip_ids_from}")
+    elif args.max_clips and args.max_clips < len(clips):
         rng = random.Random(args.seed)
         clips = rng.sample(clips, args.max_clips)
 
