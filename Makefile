@@ -606,7 +606,7 @@ inference_phase4_all:
 	    --num_beams $(NUM_BEAMS) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    --tasks none \
-	    --free_configs configs/qa_formation.json configs/qa_commentary.json configs/qa_first_action.json \
+	    --free_configs configs/qa_formation.json configs/qa_commentary.json configs/qa_attacking_intent.json configs/qa_defensive_intent.json configs/qa_defensive_line.json \
 	    --phase4_base_dir $(PHASE4_ALL_DIR) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    --device $(DEVICE) \
@@ -870,11 +870,13 @@ smoke_phase2:
 # CLIP_IDS_FROM: Phase4 results.json のパス（同じクリップで公平比較するため）
 # 例: make eval_llm_baseline CLIP_IDS_FROM=checkpoints/202605151624/phase4_init1_div1_hublinear/qa_formation/results.json GPU=0
 CLIP_IDS_FROM ?=
+PHASE4_CONFIGS ?= qa_formation qa_commentary qa_attacking_intent qa_defensive_intent qa_defensive_line
 
 eval_llm_baseline:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_llm_baseline.py \
 	    --clips_json $(SD_JSON) \
 	    --config_dir configs \
+	    --configs $(PHASE4_CONFIGS) \
 	    --out_dir checkpoints/llm_baseline \
 	    --llm_ckpt meta-llama/Meta-Llama-3-8B-Instruct \
 	    --device $(DEVICE) \
@@ -889,7 +891,7 @@ eval_phase4_judge:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_phase4_judge.py \
 	    --phase4_dir $(PHASE4_DIR) \
 	    --llm_ckpt meta-llama/Meta-Llama-3-8B-Instruct \
-	    --configs qa_formation qa_commentary qa_first_action \
+	    --configs $(PHASE4_CONFIGS) \
 	    --device $(DEVICE)
 
 clean:

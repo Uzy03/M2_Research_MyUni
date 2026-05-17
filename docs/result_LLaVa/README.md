@@ -40,6 +40,24 @@
 
 ---
 
+## LLM ベースライン比較
+
+> メタデータ（possession/zone/pressure/action_sequence）のみを LLaMA-3-8B に渡して同じ質問に回答させたスコア（同じ20クリップ）。
+
+| | LLM baseline | Phase1+Linear+P2.5 | Phase1+QFormer+P2.5 |
+|---|---|---|---|
+| Judge formation↑ | 0.20 | 0.05 | 0.00 |
+| Judge commentary↑ | **0.95** | **0.95** | 0.45 |
+| Judge first_action↑ | 1.00* | 0.50 | 0.65 |
+
+> *first_action はプロンプトに action_sequence が含まれるため baseline が有利（答えを直接参照可能）。公平な比較対象は formation と commentary のみ。
+
+**読み取り:**
+- commentary: Linear+P2.5 がベースラインと同スコア（0.95）。トラッキング特徴からの推論でメタデータ oracle と同等を達成。
+- formation: ベースライン 0.20 > モデル 0.05。formation ラベルが学習にも推論コンテキストにもなく、純粋な推論力の差が出ている。formation の改善が次の課題。
+
+---
+
 ## 考察
 
 ### Linear hub の崩壊と復活

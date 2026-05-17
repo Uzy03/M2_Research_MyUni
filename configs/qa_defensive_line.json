@@ -1,0 +1,4 @@
+{
+    "instruction": "How high is the defensive line in this soccer sequence? Answer with one of: very high, high, medium, low, or very low.",
+    "max_new_tokens": 15
+}
