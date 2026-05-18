@@ -22,8 +22,9 @@ def parse_args():
                         help="cuda / cpu")
     parser.add_argument("--gpu", type=int, default=0,
                         help="使用 GPU 番号")
-    parser.add_argument("--spatial_labels", type=str, default="spatial_labels.json",
-                        help="spatial_labels.json のパス（デフォルト: カレントディレクトリの spatial_labels.json）")
+    parser.add_argument("--spatial_labels", type=str,
+                        default="soccerdata_clips/fps1_sec30_onball_step5s/spatial_labels.json",
+                        help="spatial_labels.json のパス")
     return parser.parse_args()
 
 
