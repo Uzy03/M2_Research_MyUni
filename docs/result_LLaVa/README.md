@@ -8,18 +8,19 @@
 
 ## スコア一覧
 
-> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。P2.5 ROUGE-L/BLEU は QA テスト分割の生成評価。
+> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。P2.5 ROUGE-L/BLEU は QA テスト分割の生成評価。Judge スコアは 0-1 スケール（LLaMA-3-8B-Instruct による評価、n=20）。
 
-| init | hub | P2.5 | P2 ckpt | P3 run | P2 F1↑ | P2.5 F1↑ | P2.5 ROUGE-L↑ | P2.5 BLEU↑ | P3 F1↑ | Judge formation↑ | Judge commentary↑ | Judge first_action↑ |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Phase1 | Q-Former | なし | phase2_init1_div1_hubqformer | 202605151728 | 0.7533 | - | - | - | 0.6691 | 0.00 | 0.00 | 0.00 |
-| Phase1 | Q-Former | あり | phase2_5_init1_div1_hubqformer | 202605151555 | 0.7533 | 0.7881 | 0.3042 | 0.1165 | 0.6604 | 0.00 | 0.45 | 0.65 |
-| Phase1 | Linear | なし | phase2_init1_div1_hublinear | 202605151808 | 0.7019 | - | - | - | 0.0000 | 0.00 | 0.00 | 0.00 |
-| Phase1 | Linear | あり | phase2_5_init1_div1_hublinear | 202605151624 | 0.7019 | **0.9351** | 0.3083 | 0.1187 | **0.6775** | 0.05 | **0.95** | 0.50 |
-| Phase1.5 | Q-Former | なし | phase2_init15_div1_hubqformer | 202605141535 | 0.6116 | - | - | - | 0.6004 | - | - | - |
-| Phase1.5 | Q-Former | あり | phase2_5_init15_div1_hubqformer | - | 0.6116 | - | - | - | - | - | - | - |
-| Phase1.5 | Linear | なし | phase2_init15_div1_hublinear | 202605141549 | 0.6516 | - | - | - | 0.0000 | - | - | - |
-| Phase1.5 | Linear | あり | phase2_5_init15_div1_hublinear | - | 0.6516 | - | - | - | - | - | - | - |
+| init | hub | P2.5 | P3 run | P2 F1↑ | P2.5 F1↑ | P3 F1↑ | formation↑ | commentary↑ | att.intent↑ | def.intent↑ | def.line↑ |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Phase1 | Q-Former | なし | 202605172348 | 0.7533 | - | 0.6691 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Phase1 | Q-Former | あり | 202605180023 | 0.7533 | 0.7881 | 0.6604 | 0.05 | 0.40 | **1.00** | **1.00** | 0.15 |
+| Phase1 | Linear | なし | 202605180002 | 0.7019 | - | 0.0000 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Phase1 | Linear | あり | 202605180039 | 0.7019 | **0.9351** | **0.6775** | 0.05 | **0.90** | 0.95 | 0.90 | 0.00 |
+| **LLM Baseline** | | | (metadata only) | - | - | - | 0.20 | 0.95 | 1.00 | 1.00 | 0.20 |
+| Phase1.5 | Q-Former | なし | 202605141535 | 0.6116 | - | 0.6004 | - | - | - | - | - |
+| Phase1.5 | Q-Former | あり | - | 0.6116 | - | - | - | - | - | - | - |
+| Phase1.5 | Linear | なし | 202605141549 | 0.6516 | - | 0.0000 | - | - | - | - | - |
+| Phase1.5 | Linear | あり | - | 0.6516 | - | - | - | - | - | - | - |
 
 ---
 
@@ -39,22 +40,6 @@
 | Phase1.5 | Linear | あり | - | - | - | - | - |
 
 ---
-
-## LLM ベースライン比較
-
-> メタデータ（possession/zone/pressure/action_sequence）のみを LLaMA-3-8B に渡して同じ質問に回答させたスコア（同じ20クリップ）。
-
-| | LLM baseline | Phase1+Linear+P2.5 | Phase1+QFormer+P2.5 |
-|---|---|---|---|
-| Judge formation↑ | 0.20 | 0.05 | 0.00 |
-| Judge commentary↑ | **0.95** | **0.95** | 0.45 |
-| Judge first_action↑ | 1.00* | 0.50 | 0.65 |
-
-> *first_action はプロンプトに action_sequence が含まれるため baseline が有利（答えを直接参照可能）。公平な比較対象は formation と commentary のみ。
-
-**読み取り:**
-- commentary: Linear+P2.5 がベースラインと同スコア（0.95）。トラッキング特徴からの推論でメタデータ oracle と同等を達成。
-- formation: ベースライン 0.20 > モデル 0.05。formation ラベルが学習にも推論コンテキストにもなく、純粋な推論力の差が出ている。formation の改善が次の課題。
 
 ---
 
@@ -79,3 +64,10 @@
 - hubqformer + Phase2.5 では commentary にアクションラベル形式が混入（"performing trap, pass, clearance..."）、formation で別タスク回答が混入するなどフォーマット退行が起きている
 - **Phase2.5なしは全パターン×**: Q-Formerも含め、質問の種類に関係なくアクション定型文を出力するだけ。Phase2.5が Free QA 汎化の必須条件。
 - **現時点のベスト構成: Phase1 + Linear + Phase2.5**
+
+### LLM Baseline との比較（新5タスク）
+
+- **attacking/defensive_intent**: Q-Former+P2.5 が baseline と同スコア（1.00）、Linear+P2.5 も 0.90-0.95 でほぼ同等。トラッキング特徴から戦術意図の推論ができている
+- **commentary**: Linear+P2.5 (0.90) ≈ baseline (0.95)。Q-Former+P2.5 は 0.40
+- **formation・defensive_line**: 両モデルとも baseline (0.20) に届かず。選手の空間配置推論には追加の仕組みが必要 → ②の課題
+- **Phase2.5なし**: 5タスク全て 0.00。Phase2.5 が Free QA の絶対条件（5タスクで再確認）
