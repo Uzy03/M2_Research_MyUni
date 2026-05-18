@@ -341,6 +341,7 @@ def main():
         "--out_json", default="spatial_labels.json", help="Output JSON path"
     )
     parser.add_argument("--max_clips", type=int, default=0, help="Max clips to process (0=all)")
+    parser.add_argument("--max_games", type=int, default=0, help="Max games to process (0=all)")
     
     args = parser.parse_args()
     
@@ -354,11 +355,30 @@ def main():
     else:
         clips_list = clips
     
+    if args.max_games > 0:
+        seen_games = []
+        filtered = []
+        for c in clips_list:
+            gid = c.get('game_id', '')
+            if gid not in seen_games:
+                seen_games.append(gid)
+            if len(seen_games) <= args.max_games:
+                filtered.append(c)
+        clips_list = filtered
+
     if args.max_clips > 0:
         clips_list = clips_list[:args.max_clips]
-    
-    # Process clips
+
+    # 既存結果を読み込んでスキップ対象を特定
+    out_path = Path(args.out_json)
     results = {}
+    if out_path.exists():
+        with open(out_path) as f:
+            results = json.load(f)
+        clips_list = [c for c in clips_list if c["clip_id"] not in results]
+        print(f"Skipping {len(results)} already processed clips, {len(clips_list)} remaining")
+
+    # Process clips
     for clip_entry in tqdm(clips_list, desc="Processing clips"):
         clip_id = clip_entry["clip_id"]
         label = process_clip(clip_entry, args.base_dir)

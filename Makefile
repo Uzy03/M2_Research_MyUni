@@ -455,7 +455,8 @@ compute_spatial_labels:
 	python tracking/compute_spatial_labels.py \
 	    --clips_json $(SD_JSON) \
 	    --base_dir $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG) \
-	    --out_json $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json
+	    --out_json $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json \
+	    --max_games $(MAX_GAMES)
 
 train_trajectory_regression:
 	mkdir -p $(PHASE1_DIR)
