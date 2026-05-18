@@ -22,6 +22,8 @@ def parse_args():
                         help="cuda / cpu")
     parser.add_argument("--gpu", type=int, default=0,
                         help="使用 GPU 番号")
+    parser.add_argument("--spatial_labels", type=str, default="spatial_labels.json",
+                        help="spatial_labels.json のパス（デフォルト: カレントディレクトリの spatial_labels.json）")
     return parser.parse_args()
 
 
@@ -38,7 +40,7 @@ def load_judge_model(llm_ckpt, device):
     return tokenizer, model
 
 
-def build_judge_prompt(entry):
+def build_judge_prompt(entry, spatial=None, config_name=""):
     """エントリから Judge プロンプトを構築"""
     action = entry.get('action', '')
     possession = entry.get('possession', '')
@@ -47,6 +49,27 @@ def build_judge_prompt(entry):
     instruction = entry.get('instruction', '')
     generated = entry.get('generated', '')
     
+    # Ground Truth Facts ブロックの構築
+    gt_lines = []
+    if spatial:
+        if spatial.get("formation_attack"):
+            gt_lines.append(f"- Attacking team formation: {spatial['formation_attack']}")
+        if spatial.get("formation_defend"):
+            gt_lines.append(f"- Defending team formation: {spatial['formation_defend']}")
+        if spatial.get("def_line_label"):
+            gt_lines.append(f"- Defensive line height: {spatial['def_line_label']} ({spatial['def_line_m']:.1f}m from goal)")
+
+    gt_block = ""
+    if gt_lines:
+        gt_block = "\n## Ground Truth Facts (from rule-based tracking analysis)\n" + "\n".join(gt_lines) + "\n"
+    
+    # タスク固有ルールを構築
+    task_rule = ""
+    if "formation" in config_name and spatial and spatial.get("formation_attack"):
+        task_rule = f"\nRULE 5 (formation): The correct answer should match the ground truth formation in ## Ground Truth Facts. Score 1 only if the format is 'X-Y-Z' and is consistent with the ground truth."
+    elif "defensive_line" in config_name and spatial and spatial.get("def_line_label"):
+        task_rule = f"\nRULE 5 (defensive_line): The correct answer is '{spatial['def_line_label']}'. Score 1 only if the model's response matches this label exactly."
+    
     prompt = f"""You are a strict evaluator of a soccer video QA model's output.
 
 ## Clip Context (from tracking data)
@@ -54,7 +77,7 @@ def build_judge_prompt(entry):
 - Zone: {zone}
 - Pressure: {pressure}
 - Action sequence: {action}
-
+{gt_block}
 ## Question given to model
 {instruction}
 
@@ -73,7 +96,7 @@ RULE 3: If the response is off-topic (e.g. answers a different question than ask
 output score=0.
 
 RULE 4: If the response is relevant, non-empty, and in an appropriate format for the
-question, output score=1.
+question, output score=1.{task_rule}
 
 Output JSON only (no other text):
 {{"score": <0 or 1>, "reason": "<one sentence>"}}"""
@@ -91,9 +114,9 @@ def extract_json_from_text(text):
     return None
 
 
-def judge_entry(entry, tokenizer, model, device):
+def judge_entry(entry, tokenizer, model, device, spatial=None, config_name=""):
     """エントリを評価"""
-    prompt = build_judge_prompt(entry)
+    prompt = build_judge_prompt(entry, spatial=spatial, config_name=config_name)
     
     # プロンプトをトークン化
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
@@ -136,6 +159,16 @@ def main():
         print(f"Error: phase4_dir does not exist: {phase4_dir}")
         return
     
+    # spatial_labels.json を読み込む（存在しない場合は空 dict）
+    spatial_labels = {}
+    spatial_labels_path = Path(args.spatial_labels)
+    if spatial_labels_path.exists():
+        with open(spatial_labels_path, 'r', encoding='utf-8') as f:
+            spatial_labels = json.load(f)
+        print(f"Loaded spatial labels for {len(spatial_labels)} clips from {spatial_labels_path}")
+    else:
+        print(f"Warning: spatial_labels not found at {spatial_labels_path}, proceeding without it")
+    
     # configs が指定されていない場合、phase4_dir 直下のディレクトリを探す
     if args.configs is None:
         configs = [d.name for d in phase4_dir.iterdir() if d.is_dir()]
@@ -174,7 +207,9 @@ def main():
         scores = []
         
         for i, entry in enumerate(entries):
-            score, reason = judge_entry(entry, tokenizer, model, device)
+            clip_id = entry.get('clip_id', '')
+            spatial = spatial_labels.get(clip_id)
+            score, reason = judge_entry(entry, tokenizer, model, device, spatial=spatial, config_name=config_name)
             
             result_entry = entry.copy()
             result_entry['score'] = score

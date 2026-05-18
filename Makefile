@@ -137,6 +137,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         verify_sn_tracking train_tracking inference_tracking \
         train_instruction inference_instruction_action \
         download_soccerreplay preprocess_soccerdata add_task_labels upload_soccerdata sync_soccerdata \
+        compute_spatial_labels \
         train_trajectory_sd train_trajectory_sd_local inference_trajectory_sd inference_trajectory_sd_local \
         train_trajectory train_trajectory_tmux train_trajectory_local inference_trajectory \
         train_trajectory_regression inference_trajectory_regression \
@@ -447,6 +448,14 @@ sync_soccerdata:
 	    -e "ssh -o StrictHostKeyChecking=no -p $(REMOTE_PORT)" \
 	    "$(SOCCERDATA_DIR)/" \
 	    "$(REMOTE):/user/arch/ujihara/SoccerData/"
+
+# ルールベース空間ラベル計算（formation + defensive line height）
+# 使い方: make compute_spatial_labels
+compute_spatial_labels:
+	python tracking/compute_spatial_labels.py \
+	    --clips_json $(SD_JSON) \
+	    --base_dir $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG) \
+	    --out_json spatial_labels.json
 
 train_trajectory_regression:
 	mkdir -p $(PHASE1_DIR)
