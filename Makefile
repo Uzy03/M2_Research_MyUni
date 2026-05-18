@@ -68,6 +68,7 @@ ACTION_CKPT      = $(PHASE2_DIR)/action_alignment.pth
 PHASE2_5_CKPT    = $(PHASE2_5_DIR)/action_alignment.pth
 QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
+SAVE_INTERVAL   ?= 10
 OPEN_LORA       ?= 0
 EVAL_INTERVAL   ?= 5
 REP_PENALTY     ?= 1.3
@@ -456,7 +457,8 @@ compute_spatial_labels:
 	    --clips_json $(SD_JSON) \
 	    --base_dir $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG) \
 	    --out_json $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json \
-	    --max_games $(MAX_GAMES)
+	    --max_games $(MAX_GAMES) \
+	    --save_interval $(SAVE_INTERVAL)
 
 train_trajectory_regression:
 	mkdir -p $(PHASE1_DIR)

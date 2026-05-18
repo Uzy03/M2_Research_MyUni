@@ -342,6 +342,7 @@ def main():
     )
     parser.add_argument("--max_clips", type=int, default=0, help="Max clips to process (0=all)")
     parser.add_argument("--max_games", type=int, default=0, help="Max games to process (0=all)")
+    parser.add_argument("--save_interval", type=int, default=10, help="Save results every N clips (0=disable)")
     
     args = parser.parse_args()
     
@@ -379,25 +380,27 @@ def main():
         print(f"Skipping {len(results)} already processed clips, {len(clips_list)} remaining")
 
     # Process clips
-    for clip_entry in tqdm(clips_list, desc="Processing clips"):
+    for i, clip_entry in enumerate(tqdm(clips_list, desc="Processing clips")):
         clip_id = clip_entry["clip_id"]
         label = process_clip(clip_entry, args.base_dir)
-        
-        if label is not None:
-            results[clip_id] = label
-        else:
-            results[clip_id] = {
-                "formation_attack": None,
-                "formation_defend": None,
-                "def_line_m": None,
-                "def_line_label": None,
-            }
-    
-    # Save results
-    with open(args.out_json, "w") as f:
+
+        results[clip_id] = label if label is not None else {
+            "formation_attack": None,
+            "formation_defend": None,
+            "def_line_m": None,
+            "def_line_label": None,
+        }
+
+        if args.save_interval > 0 and (i + 1) % args.save_interval == 0:
+            with open(out_path, "w") as f:
+                json.dump(results, f, indent=2)
+            tqdm.write(f"[checkpoint] saved {len(results)} clips so far...")
+
+    # Final save
+    with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
-    
-    print(f"Saved spatial labels to {args.out_json}")
+
+    print(f"Saved spatial labels to {out_path}")
     print(f"Processed {len(results)} clips")
 
 
