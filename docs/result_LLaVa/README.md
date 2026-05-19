@@ -8,15 +8,15 @@
 
 ## スコア一覧
 
-> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。P2.5 ROUGE-L/BLEU は QA テスト分割の生成評価。Judge スコアは 0-1 スケール（LLaMA-3-8B-Instruct による評価、n=20）。
+> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。Judge スコアは 0-1 スケール（LLaMA-3-8B-Instruct による 0-100 点採点を正規化、n=20）。formation/def.line は spatial_labels.json（ルールベース K-Means）を Ground Truth として使用。
 
 | init | hub | P2.5 | P3 run | P2 F1↑ | P2.5 F1↑ | P3 F1↑ | formation↑ | commentary↑ | att.intent↑ | def.intent↑ | def.line↑ |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Phase1 | Q-Former | なし | 202605172348 | 0.7533 | - | 0.6691 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
-| Phase1 | Q-Former | あり | 202605180023 | 0.7533 | 0.7881 | 0.6604 | 0.05 | 0.40 | **1.00** | **1.00** | 0.15 |
+| Phase1 | Q-Former | なし | 202605172348 | 0.7533 | - | 0.6691 | 0.00 | 0.24 | 0.01 | 0.01 | 0.00 |
+| Phase1 | Q-Former | あり | 202605180023 | 0.7533 | 0.7881 | 0.6604 | 0.05 | 0.34 | **0.75** | **0.75** | 0.19 |
 | Phase1 | Linear | なし | 202605180002 | 0.7019 | - | 0.0000 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
-| Phase1 | Linear | あり | 202605180039 | 0.7019 | **0.9351** | **0.6775** | 0.05 | **0.90** | 0.95 | 0.90 | 0.00 |
-| **LLM Baseline** | | | (metadata only) | - | - | - | 0.20 | 0.95 | 1.00 | 1.00 | 0.20 |
+| Phase1 | Linear | あり | 202605180039 | 0.7019 | **0.9351** | **0.6775** | 0.10 | **0.68** | 0.71 | 0.68 | 0.00 |
+| **LLM Baseline** | | | (metadata only) | - | - | - | **0.43** | 0.71 | **0.75** | **0.75** | **0.28** |
 | Phase1.5 | Q-Former | なし | 202605141535 | 0.6116 | - | 0.6004 | - | - | - | - | - |
 | Phase1.5 | Q-Former | あり | - | 0.6116 | - | - | - | - | - | - | - |
 | Phase1.5 | Linear | なし | 202605141549 | 0.6516 | - | 0.0000 | - | - | - | - | - |
@@ -38,8 +38,6 @@
 | Phase1.5 | Q-Former | あり | - | - | - | - | - |
 | Phase1.5 | Linear | なし | 202605141549 | × | × (崩壊) | × (崩壊) | × |
 | Phase1.5 | Linear | あり | - | - | - | - | - |
-
----
 
 ---
 
@@ -65,9 +63,10 @@
 - **Phase2.5なしは全パターン×**: Q-Formerも含め、質問の種類に関係なくアクション定型文を出力するだけ。Phase2.5が Free QA 汎化の必須条件。
 - **現時点のベスト構成: Phase1 + Linear + Phase2.5**
 
-### LLM Baseline との比較（新5タスク）
+### LLM Baseline との比較（連続スコア版、n=20）
 
-- **attacking/defensive_intent**: Q-Former+P2.5 が baseline と同スコア（1.00）、Linear+P2.5 も 0.90-0.95 でほぼ同等。トラッキング特徴から戦術意図の推論ができている
-- **commentary**: Linear+P2.5 (0.90) ≈ baseline (0.95)。Q-Former+P2.5 は 0.40
-- **formation・defensive_line**: 両モデルとも baseline (0.20) に届かず。選手の空間配置推論には追加の仕組みが必要 → ②の課題
-- **Phase2.5なし**: 5タスク全て 0.00。Phase2.5 が Free QA の絶対条件（5タスクで再確認）
+- **attacking/defensive_intent**: Q-Former+P2.5 が baseline と同スコア（0.75）、Linear+P2.5 も 0.68-0.71 でほぼ同等。トラッキング特徴から戦術意図の推論ができている
+- **commentary**: Linear+P2.5 (0.68) ≈ baseline (0.71）。連続評価により以前のバイナリ（0.90）より厳しいスコアに。Q-Former+P2.5 は 0.34 と大きく下回る
+- **formation**: baseline が 0.43 でトップ（partial credit で上昇）。両モデルとも 0.05-0.10 に留まり、選手の空間配置推論が苦手なことが数値で明確化
+- **defensive_line**: baseline 0.28 に対し Linear+P2.5 は 0.00、Q-Former+P2.5 は 0.19。formation 同様、空間的な絶対位置の推論が困難
+- **Phase2.5なし**: 5タスク全て 0.00（Linear は commentary も崩壊）。Phase2.5 が Free QA の絶対条件
