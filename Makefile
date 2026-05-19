@@ -44,7 +44,7 @@ RUN_DIR    ?= checkpoints/$(RUN_TS)
 PHASE1_DIR       = $(RUN_DIR)/phase1
 # Phase2タグ: init重み(1 or 15) × 指示多様化(0 or 1) でディレクトリを区別
 USE_LINEAR            ?= 0
-PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)
+PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)$(if $(filter 1,$(USE_SPATIAL)),_spatial,)
 SHARED_PHASE1_DIR     = checkpoints/phase1
 SHARED_PHASE1_CKPT    = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
 SHARED_PHASE1_5_DIR   ?= checkpoints/phase1_5
@@ -68,6 +68,8 @@ ACTION_CKPT      = $(PHASE2_DIR)/action_alignment.pth
 PHASE2_5_CKPT    = $(PHASE2_5_DIR)/action_alignment.pth
 QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
+USE_SPATIAL     ?= 0
+LAMBDA_SPATIAL  ?= 0.1
 SAVE_INTERVAL   ?= 10
 OPEN_LORA       ?= 0
 EVAL_INTERVAL   ?= 5
@@ -520,6 +522,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(OPEN_ENCODER)),--open_visual_encoder --lr_encoder $(LR_ENCODER),) \
 	    $(if $(filter 1,$(USE_LLM_QA)),--use_llm_qa,) \
 	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
+	    $(if $(filter 1,$(USE_SPATIAL)),--spatial_labels $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json --lambda_spatial $(LAMBDA_SPATIAL),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
