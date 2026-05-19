@@ -763,6 +763,7 @@ train_phase2_5_1:
 	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    $(if $(filter 1,$(INSTRUCTION_DIVERSE)),--instruction_diverse,) \
+	    --allowed_tasks action,formation,def_line \
 	    --use_llm_qa \
 	    --spatial_labels $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json \
 	    --device $(DEVICE) \
