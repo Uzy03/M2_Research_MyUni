@@ -522,7 +522,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(OPEN_ENCODER)),--open_visual_encoder --lr_encoder $(LR_ENCODER),) \
 	    $(if $(filter 1,$(USE_LLM_QA)),--use_llm_qa,) \
 	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
-	    $(if $(filter 1,$(USE_SPATIAL)),--spatial_labels $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json --lambda_spatial $(LAMBDA_SPATIAL),) \
+	    $(if $(filter 1,$(USE_SPATIAL)),--spatial_labels $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json,) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 

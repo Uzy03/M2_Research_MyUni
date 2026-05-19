@@ -9,7 +9,6 @@ import warnings
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from rouge_score import rouge_scorer as rs
 from torch.utils.data import DataLoader, Subset
@@ -305,21 +304,6 @@ def run_curriculum_training(args, model, full_dataset_all,
     print("=" * 60)
 
 
-class SpatialHead(torch.nn.Module):
-    """encoder 出力から空間ラベル（def_line + formation）を予測する補助ヘッド"""
-    def __init__(self, in_dim=768):
-        super().__init__()
-        # def_line 回帰: 0-1 に正規化された値（def_line_m / 105）
-        self.def_line_head = torch.nn.Linear(in_dim, 1)
-        # formation 予測: defending team の [n_def, n_mid, n_att] を回帰（各 0-10 の整数）
-        self.formation_head = torch.nn.Linear(in_dim, 3)
-
-    def forward(self, feat):
-        # feat: (B, in_dim) = visual_encoder 出力を T 方向に mean pool したもの
-        def_line = self.def_line_head(feat).squeeze(-1)   # (B,)
-        formation = self.formation_head(feat)              # (B, 3)
-        return def_line, formation
-
 def main():
     parser = argparse.ArgumentParser(
         description="Phase 2: Multi-task action alignment with optional LoRA"
@@ -380,8 +364,6 @@ def main():
                         help='Q-FormerのかわりにLinear projectionを使う')
     parser.add_argument('--spatial_labels', type=str, default=None,
                         help='spatial_labels.json のパス。指定時に空間補助タスクを有効化')
-    parser.add_argument('--lambda_spatial', type=float, default=0.1,
-                        help='空間補助損失の重み係数')
     args = parser.parse_args()
 
     allowed_tasks = [t.strip() for t in args.allowed_tasks.split(',')] if args.allowed_tasks else None
@@ -398,7 +380,8 @@ def main():
                                     use_short_instruction=args.short_instruction,
                                     allowed_tasks=allowed_tasks, use_sentence_format=args.sentence_format,
                                     use_instruction_diverse=args.instruction_diverse,
-                                    use_answer_diverse=args.answer_diverse, use_llm_qa=args.use_llm_qa)
+                                    use_answer_diverse=args.answer_diverse, use_llm_qa=args.use_llm_qa,
+                                    spatial_labels_path=args.spatial_labels)
     indices = list(range(len(full_dataset)))
     random.shuffle(indices)
     if args.max_samples > 0:
@@ -444,37 +427,6 @@ def main():
     print(f"LoRA: {'enabled' if args.open_lora else 'disabled'}")
     enc_status = "unfrozen (Approach B')" if args.open_visual_encoder else "frozen"
     print(f"Encoder: {enc_status}")
-
-    # --- spatial labels 読み込み ---
-    spatial_label_dict = {}
-    spatial_head = None
-    if args.spatial_labels and os.path.exists(args.spatial_labels):
-        with open(args.spatial_labels) as f:
-            raw_spatial = json.load(f)
-        for clip_id, v in raw_spatial.items():
-            if v and v.get('def_line_m') is not None:
-                def_line_norm = v['def_line_m'] / 105.0
-                # formation_defend を [n_def, n_mid, n_att] にパース
-                formation = [0, 0, 0]
-                if v.get('formation_defend'):
-                    parts = v['formation_defend'].split('-')
-                    if len(parts) == 3:
-                        try:
-                            formation = [int(p) for p in parts]
-                        except ValueError:
-                            pass
-                    elif len(parts) == 2:
-                        try:
-                            formation = [int(parts[0]), int(parts[1]), 0]
-                        except ValueError:
-                            pass
-                spatial_label_dict[clip_id] = {
-                    'def_line': def_line_norm,
-                    'formation': formation,
-                }
-        print(f"Loaded spatial labels for {len(spatial_label_dict)} clips")
-        spatial_head = SpatialHead(in_dim=768).to(args.device)
-        print("SpatialHead initialized")
 
     print("\n" + "=" * 60)
     print("Step 3: Phase 1 チェックポイントロード")
@@ -541,16 +493,11 @@ def main():
     else:
         print("Step 5: 訓練ループ")
         print("=" * 60)
-        # 既存パラメータ + SpatialHead パラメータ
         base_params = [p for p in model.parameters() if p.requires_grad]
-        if spatial_head is not None:
-            base_params += list(spatial_head.parameters())
 
         if args.open_visual_encoder:
             other_params = [p for n, p in model.named_parameters()
                             if not n.startswith('visual_encoder.') and p.requires_grad]
-            if spatial_head is not None:
-                other_params += list(spatial_head.parameters())
             optimizer = torch.optim.Adam([
                 {'params': model.visual_encoder.parameters(), 'lr': args.lr_encoder},
                 {'params': other_params, 'lr': args.lr},

@@ -131,6 +131,26 @@ TASKS = [
         "label_field": "label_pressure",
         "max_new_tokens": 40,
     },
+    {
+        "name": "formation",
+        "instruction": (
+            "What formation is the defending team using in this sequence? "
+            "Answer with format like '4-4-2' (defenders-midfielders-attackers, excluding goalkeeper)."
+        ),
+        "short_instruction": "Defending team formation? Format: e.g. '4-4-2'.",
+        "label_field": "_spatial_formation_defend",
+        "max_new_tokens": 15,
+    },
+    {
+        "name": "def_line",
+        "instruction": (
+            "How high is the defending team's defensive line in this sequence? "
+            "Answer with exactly one of: very high, high, medium, low, very low."
+        ),
+        "short_instruction": "Defensive line height? very high/high/medium/low/very low.",
+        "label_field": "_spatial_def_line_label",
+        "max_new_tokens": 15,
+    },
 ]
 
 _FALLBACK_PRESSURE = "There is low pressure around the ball."
@@ -139,7 +159,7 @@ _FALLBACK_PRESSURE = "There is low pressure around the ball."
 class MultiTaskDataset(Dataset):
     def __init__(self, json_path, context_len=20, max_games=0, use_short_instruction=False,
                  allowed_tasks=None, use_sentence_format=False, use_instruction_diverse=False,
-                 use_answer_diverse=False, use_llm_qa=False):
+                 use_answer_diverse=False, use_llm_qa=False, spatial_labels_path=None):
         self.base_dir = Path(json_path).parent
         self.context_len = context_len
         with open(json_path) as f:
@@ -186,6 +206,14 @@ class MultiTaskDataset(Dataset):
                     elif qa.get("instruction") and qa.get("answer"):
                         # 旧形式または description/reasoning
                         self._llm_samples.append((entry, qa))
+
+        # spatial_labels の読み込み（formation / def_line タスク用）
+        self.spatial_labels = {}
+        if spatial_labels_path and Path(spatial_labels_path).exists():
+            with open(spatial_labels_path) as f:
+                self.spatial_labels = json.load(f)
+            print(f"MultiTaskDataset: loaded spatial labels for {len(self.spatial_labels)} clips")
+
         self._n_base = len(self.entries)
 
     def __len__(self):
@@ -225,6 +253,13 @@ class MultiTaskDataset(Dataset):
         npy, mask = self._load_arrays(entry)
         feat, msk = self._make_feat(npy, mask)
         seq_id = entry.get('clip_id', str(idx))
+
+        # spatial ラベルをエントリに注入（formation / def_line タスク用）
+        if self.spatial_labels and seq_id in self.spatial_labels:
+            s = self.spatial_labels[seq_id]
+            entry = dict(entry)  # シャローコピーして元データを保護
+            entry['_spatial_formation_defend'] = s.get('formation_defend')
+            entry['_spatial_def_line_label'] = s.get('def_line_label')
 
         instr_key = 'short_instruction' if self.use_short_instruction else 'instruction'
         for task in random.sample(self._tasks, len(self._tasks)):
