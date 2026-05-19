@@ -745,6 +745,29 @@ train_phase2_5_shared:
 	    PHASE2_5_DIR=$(SHARED_PHASE2_5_DIR) \
 	    PHASE2_5_CKPT=$(SHARED_PHASE2_5_CKPT)
 
+# Phase 2.5.1: 既存 Phase 2.5 重みから spatial タスクを追加して継続学習
+# 使い方: make train_phase2_5_1 USE_LINEAR=1 INSTRUCTION_DIVERSE=1 SENTENCE_FORMAT=1 GPU=0 MAX_GAMES=5
+PHASE2_5_TAG_NO_SPATIAL = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)
+PHASE2_5_1_DIR = checkpoints/phase2_5_1_$(PHASE2_5_TAG_NO_SPATIAL)
+train_phase2_5_1:
+	mkdir -p $(PHASE2_5_1_DIR)
+	TOKENIZERS_PARALLELISM=false CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_action_alignment.py \
+	    --json_path $(SD_JSON) \
+	    --ckpt_path checkpoints/phase2_5_$(PHASE2_5_TAG_NO_SPATIAL)/action_alignment.pth \
+	    --llm_ckpt $(LLM_CKPT) \
+	    --out_ckpt $(PHASE2_5_1_DIR)/action_alignment.pth \
+	    --context_len $(SD_CONTEXT) \
+	    --batch_size $(BATCH_PHASE2) \
+	    --epochs $(EPOCHS_PHASE2_5) \
+	    --max_games $(MAX_GAMES) \
+	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
+	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
+	    $(if $(filter 1,$(INSTRUCTION_DIVERSE)),--instruction_diverse,) \
+	    --use_llm_qa \
+	    --spatial_labels $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json \
+	    --device $(DEVICE) \
+	    2>&1 | tee $(PHASE2_5_1_DIR)/train.log
+
 # アブレーション: Phase 2.5 以降を一括実行 (Phase 2 は train_phase2 で事前完了が前提)
 # 使い方: make run_ablation USE_PHASE1_5=1 INSTRUCTION_DIVERSE=1 GPU=0 MAX_GAMES=5
 run_ablation:
