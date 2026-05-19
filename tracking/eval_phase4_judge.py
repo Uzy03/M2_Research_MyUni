@@ -67,9 +67,10 @@ def build_judge_prompt(entry, spatial=None, config_name=""):
     # タスク固有ルールを構築
     task_rule = ""
     if "formation" in config_name and spatial and spatial.get("formation_attack"):
-        task_rule = f"\nRULE 5 (formation): The correct answer should match the ground truth formation in ## Ground Truth Facts. Score 1 only if the format is 'X-Y-Z' and is consistent with the ground truth."
+        task_rule = f"\nRULE 5 (formation): Use ## Ground Truth Facts as reference. Score 100 if the format is 'X-Y-Z' and matches the ground truth exactly. Score 75 if the total player count is right but one line differs by 1. Score 50 if the structure is similar but off. Score 25 if the format is correct but content is wrong. Score 0 if format is missing or unrecognizable."
     elif "defensive_line" in config_name and spatial and spatial.get("def_line_label"):
-        task_rule = f"\nRULE 5 (defensive_line): The correct answer is '{spatial['def_line_label']}'. Score 1 only if the model's response matches this label exactly."
+        def_line_order = ["very low", "low", "medium", "high", "very high"]
+        task_rule = f"\nRULE 5 (defensive_line): The ground truth is '{spatial['def_line_label']}'. Score 100 if exact match. Score 75 if off by one level (e.g. medium vs high). Score 50 if off by two levels. Score 0 if completely wrong or missing."
     
     prompt = f"""You are a strict evaluator of a soccer video QA model's output.
 
@@ -85,7 +86,7 @@ def build_judge_prompt(entry, spatial=None, config_name=""):
 ## Model's response
 "{generated}"
 
-## Scoring rules (0 or 1)
+## Scoring rules (0-100)
 
 RULE 1 — HIGHEST PRIORITY: If the model's response (shown above between double quotes) is
 empty or contains only whitespace, you MUST output score=0. No exceptions.
@@ -96,11 +97,15 @@ output score=0.
 RULE 3: If the response is off-topic (e.g. answers a different question than asked),
 output score=0.
 
-RULE 4: If the response is relevant, non-empty, and in an appropriate format for the
-question, output score=1.{task_rule}
+RULE 4: Score 0-100 based on quality:
+- 0: empty, garbage, or completely off-topic (covered by RULE 1-3)
+- 25: response attempts to answer but is mostly wrong or incoherent
+- 50: partially correct or correct but vague/generic
+- 75: mostly correct with minor issues (slightly wrong detail, minor format issue)
+- 100: accurate, specific, and appropriate format for the question{task_rule}
 
 Output JSON only (no other text):
-{{"score": <0 or 1>, "reason": "<one sentence>"}}"""
+{{"score": <integer 0-100>, "reason": "<one sentence>"}}"""
     return prompt
 
 
@@ -143,10 +148,10 @@ def judge_entry(entry, tokenizer, model, device, spatial=None, config_name=""):
     if json_obj and 'score' in json_obj and 'reason' in json_obj:
         score = int(json_obj['score'])
         reason = str(json_obj['reason'])
-        # スコアを0-1の範囲に制限
-        score = max(0, min(1, score))
+        # 0-100 を 0-1 に正規化
+        score = max(0.0, min(1.0, score / 100.0))
     else:
-        score = 0
+        score = 0.0
         reason = "parse error"
     
     return score, reason
