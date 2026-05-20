@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 import warnings
 from pathlib import Path
@@ -129,6 +130,15 @@ def evaluate_metrics(model, dataset, device, max_eval=200, seed=0, allowed_tasks
             gen = generated_list[0] if generated_list else ""
             if task_name == 'action':
                 score = compute_f1_action(gen, answer)
+            elif task_name == 'formation':
+                gt_code = re.search(r'\d+-\d+-\d+', answer)
+                pred_code = re.search(r'\d+-\d+-\d+', gen)
+                score = 1.0 if (gt_code and pred_code and gt_code.group() == pred_code.group()) else 0.0
+            elif task_name == 'def_line':
+                _levels = ['very high', 'very low', 'high', 'medium', 'low']
+                gt_level = next((l for l in _levels if l in answer.lower()), None)
+                pred_level = next((l for l in _levels if l in gen.lower()), None)
+                score = 1.0 if (gt_level and pred_level and gt_level == pred_level) else 0.0
             else:
                 score = compute_rouge_l(gen, answer)
             if score is not None:
