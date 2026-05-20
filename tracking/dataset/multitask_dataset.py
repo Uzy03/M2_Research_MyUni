@@ -133,23 +133,17 @@ TASKS = [
     },
     {
         "name": "formation",
-        "instruction": (
-            "What formation is the defending team using in this sequence? "
-            "Answer with format like '4-4-2' (defenders-midfielders-attackers, excluding goalkeeper)."
-        ),
-        "short_instruction": "Defending team formation? Format: e.g. '4-4-2'.",
+        "instruction": "What formation is the defending team using in this sequence? Answer in a complete sentence.",
+        "short_instruction": "Defending team formation? Answer in a sentence.",
         "label_field": "_spatial_formation_defend",
-        "max_new_tokens": 15,
+        "max_new_tokens": 20,
     },
     {
         "name": "def_line",
-        "instruction": (
-            "How high is the defending team's defensive line in this sequence? "
-            "Answer with exactly one of: very high, high, medium, low, very low."
-        ),
-        "short_instruction": "Defensive line height? very high/high/medium/low/very low.",
+        "instruction": "How high is the defending team's defensive line in this sequence? Answer in a complete sentence.",
+        "short_instruction": "Defensive line height? Answer in a sentence.",
         "label_field": "_spatial_def_line_label",
-        "max_new_tokens": 15,
+        "max_new_tokens": 20,
     },
 ]
 
@@ -258,8 +252,10 @@ class MultiTaskDataset(Dataset):
         if self.spatial_labels and seq_id in self.spatial_labels:
             s = self.spatial_labels[seq_id]
             entry = dict(entry)  # シャローコピーして元データを保護
-            entry['_spatial_formation_defend'] = s.get('formation_defend')
-            entry['_spatial_def_line_label'] = s.get('def_line_label')
+            fd = s.get('formation_defend')
+            dl = s.get('def_line_label')
+            entry['_spatial_formation_defend'] = f"The defending team's formation is {fd}." if fd else None
+            entry['_spatial_def_line_label'] = f"The defending team's defensive line height is {dl}." if dl else None
 
         instr_key = 'short_instruction' if self.use_short_instruction else 'instruction'
         for task in random.sample(self._tasks, len(self._tasks)):
