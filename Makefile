@@ -581,6 +581,7 @@ inference_soccer_qa:
 	    $(if $(filter 1,$(USE_ANS_TOKEN)),--use_ans_token,) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    $(if $(filter 1,$(USE_CHAT_TEMPLATE)),--use_chat_template,) \
+	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
 	    $(if $(filter 1,$(SHORT_INSTRUCTION)),--short_instruction,) \
 	    $(if $(ALLOWED_TASKS),--tasks $(ALLOWED_TASKS),) \
 	    $(if $(QA_CONFIG),--free_config $(QA_CONFIG),) \

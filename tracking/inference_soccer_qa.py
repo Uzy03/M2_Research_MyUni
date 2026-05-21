@@ -65,6 +65,8 @@ def parse_args():
                         help="Multi-head Q-Former heads (1=baseline)")
     parser.add_argument('--use_chat_template', action='store_true',
                         help="Use LLaMA-3 assistant header as answer boundary signal")
+    parser.add_argument('--use_linear', action='store_true',
+                        help='Q-Formerのかわりに Linear projection を使う')
     parser.add_argument('--short_instruction', action='store_true',
                         help="Use shortened instruction texts to reduce token count")
     parser.add_argument('--sentence_format', action='store_true',
@@ -99,7 +101,7 @@ def load_clips(json_path, max_samples, seed, max_games=0):
 
 
 def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1,
-               use_chat_template=False, num_beams=5):
+               use_chat_template=False, num_beams=5, use_linear=False):
     model = matchvoice_model_tracking(
         load_checkpoint=False,
         num_features=768,
@@ -110,6 +112,7 @@ def load_model(ckpt_path, llm_ckpt, device, use_ans_token=False, qformer_heads=1
         use_ans_token=use_ans_token,
         qformer_heads=qformer_heads,
         use_chat_template=use_chat_template,
+        use_linear=use_linear,
         num_players=23,
         in_features=5,
         d_model=256,
@@ -157,7 +160,8 @@ def main():
                        use_ans_token=args.use_ans_token,
                        qformer_heads=args.qformer_heads,
                        use_chat_template=args.use_chat_template,
-                       num_beams=args.num_beams)
+                       num_beams=args.num_beams,
+                       use_linear=args.use_linear)
     model._repetition_penalty = args.repetition_penalty
     model._max_new_tokens     = args.max_new_tokens
     print(f"Model ready on {args.device}  num_beams={args.num_beams}")

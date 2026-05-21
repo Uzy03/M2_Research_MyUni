@@ -577,7 +577,7 @@ def main():
         test_r = evaluate_metrics(model, test_dataset, args.device, allowed_tasks=allowed_tasks,
                                   no_instruction=args.no_instruction)
         for name, score in test_r.items():
-            metric = 'f1' if name == 'action' else 'rouge_l'
+            metric = 'f1' if name == 'action' else ('accuracy' if name in ('formation', 'def_line') else 'rouge_l')
             print(f"  Test {name} {metric}={score:.4f}")
 
         if args.use_llm_qa:
