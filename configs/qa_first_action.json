@@ -1,0 +1,4 @@
+{
+    "instruction": "What is the first action that occurs in this soccer sequence? Answer with a single action word only.",
+    "max_new_tokens": 15
+}

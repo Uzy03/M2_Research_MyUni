@@ -1,0 +1,4 @@
+{
+  "instruction": "List the soccer actions occurring in this tracking sequence in chronological order.",
+  "max_new_tokens": 32
+}

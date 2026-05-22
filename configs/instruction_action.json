@@ -1,0 +1,6 @@
+{
+  "instruction": "What action is occurring in this soccer clip?",
+  "use_logits_filter": false,
+  "max_new_tokens": 16,
+  "out_csv": "results/instruction_action_results.csv"
+}
