@@ -1,0 +1,4 @@
+{
+  "instruction": "Is this an attacking or defensive situation for team 1 (slots 1-11)? Briefly explain.",
+  "max_new_tokens": 64
+}

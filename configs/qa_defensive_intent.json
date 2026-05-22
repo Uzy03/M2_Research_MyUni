@@ -1,0 +1,4 @@
+{
+    "instruction": "What is the defending team's tactical intention in this soccer sequence? Answer in one or two sentences.",
+    "max_new_tokens": 80
+}
