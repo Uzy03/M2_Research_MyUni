@@ -2,7 +2,7 @@
 
 - **データ**: SoccerNet-England-EPL 全シーズン（5ゲーム）
 - **固定条件**: LoRA なし / SENTENCE_FORMAT=1 / INSTRUCTION_DIVERSE=1 / 10エポック
-- **アブレーション軸**: init重み(Phase1 vs Phase1.5) × hub(Q-Former vs Linear) × Phase2.5(あり vs なし)
+- **アブレーション軸**: init重み(Phase1 vs Phase1.5) × hub(Q-Former vs Linear) × Phase2.5(あり vs なし) × Phase2.5.1(空間補助タスク追加)
 
 ---
 
@@ -20,7 +20,9 @@
 | Phase1.5 | Q-Former | なし | 202605141535 | 0.6116 | - | 0.6004 | - | - | - | - | - |
 | Phase1.5 | Q-Former | あり | - | 0.6116 | - | - | - | - | - | - | - |
 | Phase1.5 | Linear | なし | 202605141549 | 0.6516 | - | 0.0000 | - | - | - | - | - |
-| Phase1.5 | Linear | あり | - | 0.6516 | - | - | - | - | - | - | - |
+| Phase1.5 | Linear | あり | - | 0.6516 | - | - | - | - | - | - |
+| Phase1 | Q-Former | P2.5.1 | 202605202300 | 0.7533 | 0.8414 | **0.8615** | **0.1875** | **0.4625** | **0.7500** | **0.7500** | **0.2000** |
+| Phase1 | Linear | P2.5.1 | 202605211053 | 0.7019 | 0.8842 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0375 | - |
 
 ---
 
@@ -62,6 +64,13 @@
 - hubqformer + Phase2.5 では commentary にアクションラベル形式が混入（"performing trap, pass, clearance..."）、formation で別タスク回答が混入するなどフォーマット退行が起きている
 - **Phase2.5なしは全パターン×**: Q-Formerも含め、質問の種類に関係なくアクション定型文を出力するだけ。Phase2.5が Free QA 汎化の必須条件。
 - **現時点のベスト構成: Phase1 + Linear + Phase2.5**
+
+### Phase2.5.1（空間補助タスク追加）の効果
+
+- **学習設定**: Phase2.5 重みから継続学習、allowed_tasks=action/formation/def_line + QA、5エポック
+- **Q-Former**: P3 F1 が 0.6604 → **0.8615** に大幅改善。formation 0.05→**0.1875**、commentary 0.3375→**0.4625**、def.line 0.1875→**0.2000** と全タスクで改善
+- **Linear**: 壊滅的忘却が発生。P3 F1=0.0000、FreeQA は全タスク崩壊（ランダムな文字列を生成）
+- **結論**: Q-Former は空間タスク追加に頑健で有効。Linear は脆弱で QA 能力を喪失しやすい。以降の実験は Q-Former を採用する
 
 ### LLM Baseline との比較（連続スコア版、n=20）
 

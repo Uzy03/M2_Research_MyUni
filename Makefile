@@ -153,6 +153,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_phase2 train_phase2_5 train_phase2_5_shared run_ablation run_inference \
         eval_phase4_judge \
         eval_llm_baseline eval_llm_baseline_judge \
+        eval_soccer_understanding \
         check smoke smoke_phase2 clean
 
 build:
@@ -926,12 +927,19 @@ eval_llm_baseline_judge:
 	$(MAKE) eval_llm_baseline GPU=$(GPU) CLIP_IDS_FROM=$(CLIP_IDS_FROM)
 	$(MAKE) eval_phase4_judge PHASE4_DIR=checkpoints/llm_baseline GPU=$(GPU)
 
-# 使い方: make eval_phase4_judge PHASE4_DIR=checkpoints/RUN_TS/phase4_TAG GPU=0
+# 使い方: make eval_phase4_judge RUN_TS=202605XXXXXX USE_LINEAR=1 GPU=0
 eval_phase4_judge:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_phase4_judge.py \
-	    --phase4_dir $(PHASE4_DIR) \
+	    --phase4_dir $(if $(PHASE4_DIR),$(PHASE4_DIR),$(PHASE4_ALL_DIR)) \
 	    --llm_ckpt meta-llama/Meta-Llama-3-8B-Instruct \
 	    --configs $(PHASE4_CONFIGS) \
+	    --device $(DEVICE)
+
+# 使い方: make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0
+# 比較: make eval_soccer_understanding MODEL=Qwen/Qwen2.5-7B-Instruct GPU=0
+eval_soccer_understanding:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_soccer_understanding.py \
+	    --model $(MODEL) \
 	    --device $(DEVICE)
 
 clean:
