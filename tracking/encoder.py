@@ -47,8 +47,11 @@ class TrackingEncoder(nn.Module):
             batch_first=True,
             dropout=0.1,
         )
+        # enable_nested_tensor=False: prevents PyTorch from compressing padded
+        # sequences into variable-length nested tensors, which would shrink the
+        # output's player dimension and break the subsequent mean-pooling step.
         self.spatial_transformer = TransformerEncoder(
-            spatial_layer, num_layers=num_spatial_layers
+            spatial_layer, num_layers=num_spatial_layers, enable_nested_tensor=False
         )
 
         # 時間トランスフォーマー（タイムステップ間の時系列関係をモデル）
@@ -94,12 +97,20 @@ class TrackingEncoder(nn.Module):
         if mask is not None:
             # (B, T, N) -> (B*T, N)
             src_key_padding_mask = mask.reshape(B * T, N)
+            # If all players in a frame are masked, unmask them to avoid NaN
+            # in softmax (softmax of all -inf = NaN in PyTorch)
+            all_masked = src_key_padding_mask.all(dim=-1, keepdim=True)
+            src_key_padding_mask = src_key_padding_mask & ~all_masked
 
         # 空間トランスフォーマー
         x = self.spatial_transformer(x, src_key_padding_mask=src_key_padding_mask)
 
-        # 選手次元でmean pooling (B*T, N, d_model) -> (B*T, d_model)
-        x = x.mean(dim=1)
+        # 選手次元でmean pooling（マスク済み選手を除外）(B*T, N, d_model) -> (B*T, d_model)
+        if src_key_padding_mask is not None:
+            valid = (~src_key_padding_mask).float().unsqueeze(-1)  # (B*T, N, 1)
+            x = (x * valid).sum(dim=1) / valid.sum(dim=1).clamp(min=1)
+        else:
+            x = x.mean(dim=1)
 
         # (B*T, d_model) -> (B, T, d_model)
         x = x.reshape(B, T, self.d_model)

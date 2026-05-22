@@ -1,0 +1,4 @@
+{
+    "instruction": "What formation is the attacking team using in this soccer sequence? Answer with a formation like 4-4-2, 4-3-3, or 3-5-2.",
+    "max_new_tokens": 20
+}
