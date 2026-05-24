@@ -80,8 +80,9 @@ def eval_dim2(answer: str, regex: str) -> float:
     """Regex match. Also accepts dashless form (e.g. '4231' → '4-2-3-1')."""
     if re.search(regex, answer):
         return 1.0
-    # Insert dashes between consecutive digits to normalize dashless answers
-    normalized = re.sub(r'(\d)(\d)', r'\1-\2', answer)
+    # Extract digit sequence and insert dash between every digit
+    digits = re.findall(r'\d', answer)
+    normalized = '-'.join(digits)
     return 1.0 if re.search(regex, normalized) else 0.0
 
 
@@ -93,28 +94,26 @@ def eval_dim3(answer: str, keyword_groups: List[List[str]]) -> float:
 
 
 def ask(tokenizer, model, question: str, max_new_tokens: int) -> str:
-    """Generate answer using chat template"""
+    """Generate answer using chat template (Gemini-recommended pattern for Qwen2.5)."""
     messages = [
-        {"role": "system", "content": "You are a knowledgeable soccer expert. Answer questions concisely and accurately in plain text only."},
+        {"role": "system", "content": "You are a knowledgeable soccer expert. Answer concisely in plain text only."},
         {"role": "user", "content": question},
     ]
-    input_ids = tokenizer.apply_chat_template(
-        messages, add_generation_prompt=True, return_tensors="pt"
-    ).to(model.device)
-    # Collect all EOS token IDs (handles Qwen <|im_end|> = 151645 and LLaMA <|eot_id|>)
-    eos_ids = list({tokenizer.eos_token_id} | set(
-        tokenizer.convert_tokens_to_ids(t)
-        for t in ["<|im_end|>", "<|eot_id|>", "<|end_of_text|>"]
-        if tokenizer.convert_tokens_to_ids(t) not in (None, tokenizer.unk_token_id)
-    ))
+    # tokenize=False → str → re-tokenize avoids tiktoken BPE decode artifacts
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
     with torch.no_grad():
-        output_ids = model.generate(
-            input_ids, max_new_tokens=max_new_tokens, do_sample=False,
-            eos_token_id=eos_ids, pad_token_id=tokenizer.eos_token_id,
+        generated_ids = model.generate(
+            **model_inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
             repetition_penalty=1.1,
         )
-    generated = output_ids[0][input_ids.shape[1]:]
-    return tokenizer.decode(generated, skip_special_tokens=True).strip()
+    # Trim input tokens, then batch_decode with clean_up_tokenization_spaces
+    trimmed = [out[len(inp):] for inp, out in zip(model_inputs.input_ids, generated_ids)]
+    return tokenizer.batch_decode(
+        trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=True
+    )[0].strip()
 
 
 def main():
@@ -139,7 +138,7 @@ def main():
     
     # Load model and tokenizer
     print(f"Loading model: {args.model}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map="auto")
     model.eval()
     print("Model loaded successfully")
