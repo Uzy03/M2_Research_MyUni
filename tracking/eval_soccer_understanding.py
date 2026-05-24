@@ -77,8 +77,12 @@ def eval_dim1(answer: str, ground_truths: List[str]) -> float:
 
 
 def eval_dim2(answer: str, regex: str) -> float:
-    """Regex match"""
-    return 1.0 if re.search(regex, answer) else 0.0
+    """Regex match. Also accepts dashless form (e.g. '4231' → '4-2-3-1')."""
+    if re.search(regex, answer):
+        return 1.0
+    # Insert dashes between consecutive digits to normalize dashless answers
+    normalized = re.sub(r'(\d)(\d)', r'\1-\2', answer)
+    return 1.0 if re.search(regex, normalized) else 0.0
 
 
 def eval_dim3(answer: str, keyword_groups: List[List[str]]) -> float:
@@ -107,6 +111,7 @@ def ask(tokenizer, model, question: str, max_new_tokens: int) -> str:
         output_ids = model.generate(
             input_ids, max_new_tokens=max_new_tokens, do_sample=False,
             eos_token_id=eos_ids, pad_token_id=tokenizer.eos_token_id,
+            repetition_penalty=1.1,
         )
     generated = output_ids[0][input_ids.shape[1]:]
     return tokenizer.decode(generated, skip_special_tokens=True).strip()
