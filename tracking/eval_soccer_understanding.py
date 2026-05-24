@@ -90,12 +90,24 @@ def eval_dim3(answer: str, keyword_groups: List[List[str]]) -> float:
 
 def ask(tokenizer, model, question: str, max_new_tokens: int) -> str:
     """Generate answer using chat template"""
-    messages = [{"role": "user", "content": question}]
+    messages = [
+        {"role": "system", "content": "You are a knowledgeable soccer expert. Answer questions concisely and accurately in plain text only."},
+        {"role": "user", "content": question},
+    ]
     input_ids = tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, return_tensors="pt"
     ).to(model.device)
+    # Collect all EOS token IDs (handles Qwen <|im_end|> = 151645 and LLaMA <|eot_id|>)
+    eos_ids = list({tokenizer.eos_token_id} | set(
+        tokenizer.convert_tokens_to_ids(t)
+        for t in ["<|im_end|>", "<|eot_id|>", "<|end_of_text|>"]
+        if tokenizer.convert_tokens_to_ids(t) not in (None, tokenizer.unk_token_id)
+    ))
     with torch.no_grad():
-        output_ids = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False)
+        output_ids = model.generate(
+            input_ids, max_new_tokens=max_new_tokens, do_sample=False,
+            eos_token_id=eos_ids, pad_token_id=tokenizer.eos_token_id,
+        )
     generated = output_ids[0][input_ids.shape[1]:]
     return tokenizer.decode(generated, skip_special_tokens=True).strip()
 
