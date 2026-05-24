@@ -139,7 +139,7 @@ def main():
     # Load model and tokenizer
     print(f"Loading model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype="auto", device_map="auto")
     model.eval()
     print("Model loaded successfully")
     
