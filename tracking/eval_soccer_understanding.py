@@ -76,6 +76,11 @@ def eval_dim1(answer: str, ground_truths: List[str]) -> float:
     return 1.0 if any(gt.lower() in ans_lower for gt in ground_truths) else 0.0
 
 
+def clean_answer(answer: str) -> str:
+    """Replace '!' artifacts with space and normalize whitespace for reliable scoring."""
+    return re.sub(r'\s+', ' ', answer.replace('!', ' ')).strip()
+
+
 def eval_dim2(answer: str, regex: str) -> float:
     """Regex match. Also accepts dashless form (e.g. '4231' → '4-2-3-1')."""
     if re.search(regex, answer):
@@ -139,7 +144,7 @@ def main():
     # Load model and tokenizer
     print(f"Loading model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype="auto", device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map="auto")
     model.eval()
     print("Model loaded successfully")
     
@@ -156,18 +161,19 @@ def main():
         # Get model answer
         answer = ask(tokenizer, model, item["question"], args.max_new_tokens)
         
-        # Score based on dimension
+        # Score based on dimension (clean ! artifacts before scoring)
+        cleaned = clean_answer(answer)
         dim = item["dim"]
         if dim == 1:
-            score = eval_dim1(answer, item["ground_truths"])
+            score = eval_dim1(cleaned, item["ground_truths"])
             dim1_scores.append(score)
         elif dim == 2:
-            score = eval_dim2(answer, item["regex"])
+            score = eval_dim2(cleaned, item["regex"])
             dim2_scores.append(score)
             if score == 0.0:
                 dim2_incorrect.append((item["id"], item["question"], answer))
         elif dim == 3:
-            score = eval_dim3(answer, item["keyword_groups"])
+            score = eval_dim3(cleaned, item["keyword_groups"])
             dim3_scores.append(score)
         
         details.append({
