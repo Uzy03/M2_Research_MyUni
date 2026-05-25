@@ -196,8 +196,8 @@ def main():
     avg_dim2 = sum(dim2_scores) / len(dim2_scores) if dim2_scores else 0.0
     avg_dim3 = sum(dim3_scores) / len(dim3_scores) if dim3_scores else 0.0
     
-    # Calculate SUS score
-    sus = avg_dim1 * 0.20 + avg_dim2 * 0.40 + avg_dim3 * 0.40
+    # Calculate SUS score (D3 is supplementary reference only; only objective-label dims count)
+    sus = avg_dim1 * 0.30 + avg_dim2 * 0.70
     
     # Prepare output
     output_data = {
