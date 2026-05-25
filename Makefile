@@ -936,7 +936,7 @@ eval_phase4_judge:
 	    --device $(DEVICE)
 
 # 使い方: make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0
-# 比較: make eval_soccer_understanding MODEL=Qwen/Qwen2.5-7B-Instruct GPU=0
+# Qwen(古いGPU): make eval_soccer_understanding MODEL=Qwen/Qwen2.5-7B-Instruct-AWQ GPU=0
 eval_soccer_understanding:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_soccer_understanding.py \
 	    --model $(MODEL) \

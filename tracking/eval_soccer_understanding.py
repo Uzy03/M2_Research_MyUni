@@ -144,7 +144,12 @@ def main():
     # Load model and tokenizer
     print(f"Loading model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map="auto")
+    # AWQ/GPTQ models manage dtype internally; float16 causes overflow on pre-Ampere GPUs with Qwen2.5
+    is_quantized = any(q in args.model.lower() for q in ["awq", "gptq"])
+    load_kwargs = {"device_map": "auto", "trust_remote_code": True}
+    if not is_quantized:
+        load_kwargs["torch_dtype"] = torch.float16
+    model = AutoModelForCausalLM.from_pretrained(args.model, **load_kwargs)
     model.eval()
     print("Model loaded successfully")
     
