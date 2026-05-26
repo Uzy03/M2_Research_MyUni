@@ -7,7 +7,8 @@ import re
 import time
 from pathlib import Path
 
-from openai import OpenAI
+import urllib.request
+import urllib.error
 
 
 def parse_args():
@@ -28,14 +29,14 @@ def parse_args():
     return parser.parse_args()
 
 
-def setup_client(base_url: str, api_key: str = None) -> OpenAI:
-    """OpenAI 互換 API クライアントをセットアップ"""
+def setup_client(base_url: str, api_key: str = None) -> dict:
+    """API クライアント設定を返す（標準 urllib のみ使用、外部依存なし）"""
     if api_key is None:
         import os
         api_key = os.environ.get("GITHUB_TOKEN") or os.environ.get("OPENAI_API_KEY")
         if api_key is None:
             raise ValueError("API key not found. Set GITHUB_TOKEN or OPENAI_API_KEY env var, or pass --api_key")
-    return OpenAI(base_url=base_url, api_key=api_key)
+    return {"base_url": base_url.rstrip("/"), "api_key": api_key}
 
 
 def build_judge_prompt(entry, spatial=None, config_name=""):
@@ -126,18 +127,27 @@ def judge_entry(entry, client, model_name, spatial=None, config_name=""):
     score = 0.0
     reason = "api error"
     
+    url = f"{client['base_url']}/chat/completions"
+    payload = json.dumps({
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "You are a strict evaluator of soccer video QA model outputs. Always output valid JSON only, no other text."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 128,
+        "temperature": 0
+    }).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {client['api_key']}"
+    }
+
     for attempt in range(3):
         try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a strict evaluator of soccer video QA model outputs. Always output valid JSON only, no other text."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=128,
-                temperature=0
-            )
-            response_text = response.choices[0].message.content.strip()
+            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp_json = json.loads(resp.read().decode("utf-8"))
+            response_text = resp_json["choices"][0]["message"]["content"].strip()
             break
         except Exception as e:
             if attempt < 2:
