@@ -153,7 +153,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_phase2 train_phase2_5 train_phase2_5_shared run_ablation run_inference \
         eval_phase4_judge \
         eval_llm_baseline eval_llm_baseline_judge \
-        eval_soccer_understanding eval_soccer_understanding_fewshot \
+        eval_soccer_understanding \
         check smoke smoke_phase2 clean
 
 build:
@@ -935,18 +935,14 @@ eval_phase4_judge:
 	    --configs $(PHASE4_CONFIGS) \
 	    --device $(DEVICE)
 
-# 使い方: make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0
+# 使い方: make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0 FEWSHOT=0
+#         make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0 FEWSHOT=1
+FEWSHOT ?= 0
 eval_soccer_understanding:
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_soccer_understanding.py \
 	    --model $(MODEL) \
-	    --device $(DEVICE)
-
-# Few-shot 版: make eval_soccer_understanding_fewshot MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0
-eval_soccer_understanding_fewshot:
-	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_soccer_understanding.py \
-	    --model $(MODEL) \
 	    --device $(DEVICE) \
-	    --few_shot
+	    $(if $(filter 1,$(FEWSHOT)),--few_shot,)
 
 clean:
 	docker image prune -f
