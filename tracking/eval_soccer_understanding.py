@@ -69,6 +69,37 @@ BENCHMARK = [
      ]},
 ]
 
+# Few-shot examples for few-shot prompting (2 examples per dimension from non-benchmark questions)
+FEW_SHOT_EXAMPLES = [
+    # D1 - Rules
+    [
+        "A player in an offside position receives the ball directly from a goal kick. What is the referee decision?",
+        "Play continues. A player cannot be offside directly from a goal kick under the Laws of the Game."
+    ],
+    [
+        "A player takes a free kick and the ball goes directly into the opponent goal without touching any other player. Is it a valid goal?",
+        "Yes, it is a valid goal. A goal can be scored directly from a direct free kick."
+    ],
+    # D2 - Formation
+    [
+        "A team has 4 defenders in a flat line, 4 midfielders in a flat line, and 2 strikers up front. What formation is this? Answer only with the formation code (e.g. 4-4-2).",
+        "4-4-2"
+    ],
+    [
+        "A team lines up with 3 central defenders, 5 midfielders across the pitch, and 2 strikers. What formation is this? Answer only with the formation code.",
+        "3-5-2"
+    ],
+    # D3 - Tactical
+    [
+        "A team immediately presses the opponent to win the ball back within seconds of losing possession, before the opponent can organize. What is this tactic called?",
+        "This is called gegenpressing or counter-pressing. The team applies immediate high pressure after losing the ball to regain possession quickly and exploit the opponent disorganization."
+    ],
+    [
+        "A striker receives the ball with their back to goal, holds it up, and plays a simple pass to a teammate running into space. What is the name of this forward play style?",
+        "This is called a target man or hold-up play. The forward acts as a link player, shielding the ball and bringing teammates into play rather than running in behind."
+    ],
+]
+
 
 def eval_dim1(answer: str, ground_truths: List[str]) -> float:
     """Keyword exact match (case-insensitive)"""
@@ -98,12 +129,16 @@ def eval_dim3(answer: str, keyword_groups: List[List[str]]) -> float:
     return score / len(keyword_groups) if keyword_groups else 0.0
 
 
-def ask(tokenizer, model, question: str, max_new_tokens: int) -> str:
+def ask(tokenizer, model, question: str, max_new_tokens: int, few_shot: bool = False) -> str:
     """Generate answer using chat template (Gemini-recommended pattern for Qwen2.5)."""
     messages = [
         {"role": "system", "content": "You are a knowledgeable soccer expert. Answer concisely in plain text only."},
-        {"role": "user", "content": question},
     ]
+    if few_shot:
+        for user_msg, assistant_msg in FEW_SHOT_EXAMPLES:
+            messages.append({"role": "user", "content": user_msg})
+            messages.append({"role": "assistant", "content": assistant_msg})
+    messages.append({"role": "user", "content": question})
     # tokenize=False → str → re-tokenize avoids tiktoken BPE decode artifacts
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
@@ -128,13 +163,17 @@ def main():
     parser.add_argument("--gpu", type=int, default=0, help="GPU device index")
     parser.add_argument("--output", type=str, default=None, help="JSON output path")
     parser.add_argument("--max_new_tokens", type=int, default=256, help="Maximum tokens for generation")
+    parser.add_argument("--few_shot", action="store_true", help="Enable few-shot prompting")
     
     args = parser.parse_args()
     
     # Set output path
     if args.output is None:
         model_slug = args.model.replace("/", "_").replace("-", "_").replace(".", "_")
-        output_path = f"results/soccer_understanding_{model_slug}.json"
+        if args.few_shot:
+            output_path = f"results/soccer_understanding_{model_slug}_fewshot.json"
+        else:
+            output_path = f"results/soccer_understanding_{model_slug}.json"
     else:
         output_path = args.output
     
@@ -164,7 +203,7 @@ def main():
         print(f"Processing {item['id']}...", end=" ", flush=True)
         
         # Get model answer
-        answer = ask(tokenizer, model, item["question"], args.max_new_tokens)
+        answer = ask(tokenizer, model, item["question"], args.max_new_tokens, few_shot=args.few_shot)
         
         # Score based on dimension (clean ! artifacts before scoring)
         cleaned = clean_answer(answer)
@@ -216,8 +255,9 @@ def main():
         json.dump(output_data, f, indent=2)
     
     # Print results
+    shot_mode = "(few-shot)" if args.few_shot else "(zero-shot)"
     print("\n" + "=" * 70)
-    print(f"=== Soccer Understanding Benchmark: {args.model} ===")
+    print(f"=== Soccer Understanding Benchmark {shot_mode}: {args.model} ===")
     print("=" * 70)
     print(f"Dimension 1 (Rules)    Accuracy: {avg_dim1*100:5.1f}%  ({int(sum(dim1_scores))}/{len(dim1_scores)})")
     print(f"Dimension 2 (Spatial)  Accuracy: {avg_dim2*100:5.1f}%  ({int(sum(dim2_scores))}/{len(dim2_scores)})")
