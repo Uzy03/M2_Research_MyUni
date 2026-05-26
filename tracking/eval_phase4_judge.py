@@ -142,16 +142,22 @@ def judge_entry(entry, client, model_name, spatial=None, config_name=""):
         "Authorization": f"Bearer {client['api_key']}"
     }
 
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
             with urllib.request.urlopen(req, timeout=30) as resp:
                 resp_json = json.loads(resp.read().decode("utf-8"))
             response_text = resp_json["choices"][0]["message"]["content"].strip()
             break
+        except urllib.error.HTTPError as e:
+            wait = 60 if e.code == 429 else 5
+            print(f"    HTTP {e.code} (attempt {attempt+1}/5), waiting {wait}s...")
+            time.sleep(wait)
+            if attempt == 4:
+                reason = f"api error: HTTP {e.code}"
         except Exception as e:
-            if attempt < 2:
-                time.sleep(1)
+            if attempt < 4:
+                time.sleep(5)
                 continue
             reason = f"api error: {e}"
     
@@ -222,27 +228,48 @@ def main():
         
         print(f"Loaded {len(entries)} entries from {json_path}")
         
+        # 既存 judge_results.json があればロードして resume
+        judge_json_path = config_dir / 'judge_results.json'
+        existing = {}
+        if judge_json_path.exists():
+            with open(judge_json_path, 'r', encoding='utf-8') as f:
+                prev = json.load(f)
+            # api error でないエントリのみ有効とみなす
+            existing = {r['clip_id']: r for r in prev if not str(r.get('reason', '')).startswith('api error')}
+            print(f"  Resume: {len(existing)} valid entries already scored")
+
         # 各エントリを評価
         judge_results = []
         scores = []
-        
+
         for i, entry in enumerate(entries):
             clip_id = entry.get('clip_id', '')
+            # 有効なスコアが既にあればスキップ
+            if clip_id in existing:
+                result_entry = existing[clip_id]
+                judge_results.append(result_entry)
+                scores.append(result_entry['score'])
+                continue
+
             spatial = spatial_labels.get(clip_id)
             score, reason = judge_entry(entry, client, args.model, spatial=spatial, config_name=config_name)
-            time.sleep(0.5)
-            
+            time.sleep(5)  # GitHub Models: 15rpm → 4s/req + margin
+
             result_entry = entry.copy()
             result_entry['score'] = score
             result_entry['reason'] = reason
             judge_results.append(result_entry)
             scores.append(score)
-            
+
+            # チェックポイント保存（5件ごと）
+            if (i + 1) % 5 == 0:
+                with open(judge_json_path, 'w', encoding='utf-8') as f:
+                    json.dump(judge_results, f, ensure_ascii=False, indent=2)
+
             if (i + 1) % 10 == 0 or i == len(entries) - 1:
                 print(f"  [{i+1}/{len(entries)}] processed")
         
-        # judge_results.json を保存
-        judge_json_path = config_dir / 'judge_results.json'
+        # 最終保存
         with open(judge_json_path, 'w', encoding='utf-8') as f:
             json.dump(judge_results, f, ensure_ascii=False, indent=2)
         print(f"Saved judge_results.json: {judge_json_path}")
