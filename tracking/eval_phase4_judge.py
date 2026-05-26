@@ -4,41 +4,38 @@ import argparse
 import csv
 import json
 import re
+import time
 from pathlib import Path
 
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from openai import OpenAI
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Phase 4 Free QA: LLM-as-a-Judge evaluation")
     parser.add_argument("--phase4_dir", type=str, required=True,
                         help="Phase 4 出力ディレクトリ（例: checkpoints/RUN_TS/phase4_TAG）")
-    parser.add_argument("--llm_ckpt", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct",
-                        help="Judge LLM のチェックポイント")
+    parser.add_argument("--model", type=str, default="gpt-4o",
+                        help="Judge LLM モデル名（例: gpt-4o, gpt-4o-mini）")
+    parser.add_argument("--base_url", type=str, default="https://models.inference.ai.azure.com",
+                        help="API base URL。GitHub Models: https://models.inference.ai.azure.com / OpenAI: https://api.openai.com/v1")
+    parser.add_argument("--api_key", type=str, default=None,
+                        help="API キー。省略時は環境変数 GITHUB_TOKEN または OPENAI_API_KEY を使用")
     parser.add_argument("--configs", nargs='+', default=None,
                         help="評価する config 名のリスト（例: qa_formation qa_commentary qa_first_action）")
-    parser.add_argument("--device", type=str, default="cuda",
-                        help="cuda / cpu")
-    parser.add_argument("--gpu", type=int, default=0,
-                        help="使用 GPU 番号")
     parser.add_argument("--spatial_labels", type=str,
                         default="soccerdata_clips/fps1_sec30_onball_step5s/spatial_labels.json",
                         help="spatial_labels.json のパス")
     return parser.parse_args()
 
 
-def load_judge_model(llm_ckpt, device):
-    """Judge LLM をロード"""
-    print(f"Loading Judge LLM: {llm_ckpt}")
-    tokenizer = AutoTokenizer.from_pretrained(llm_ckpt)
-    model = AutoModelForCausalLM.from_pretrained(
-        llm_ckpt,
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-    model.eval()
-    return tokenizer, model
+def setup_client(base_url: str, api_key: str = None) -> OpenAI:
+    """OpenAI 互換 API クライアントをセットアップ"""
+    if api_key is None:
+        import os
+        api_key = os.environ.get("GITHUB_TOKEN") or os.environ.get("OPENAI_API_KEY")
+        if api_key is None:
+            raise ValueError("API key not found. Set GITHUB_TOKEN or OPENAI_API_KEY env var, or pass --api_key")
+    return OpenAI(base_url=base_url, api_key=api_key)
 
 
 def build_judge_prompt(entry, spatial=None, config_name=""):
@@ -120,39 +117,46 @@ def extract_json_from_text(text):
     return None
 
 
-def judge_entry(entry, tokenizer, model, device, spatial=None, config_name=""):
+def judge_entry(entry, client, model_name, spatial=None, config_name=""):
     """エントリを評価"""
     prompt = build_judge_prompt(entry, spatial=spatial, config_name=config_name)
     
-    # プロンプトをトークン化
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    # API 呼び出し（リトライ対応）
+    response_text = None
+    score = 0.0
+    reason = "api error"
     
-    # LLM で生成
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=128,
-            temperature=0,  # greedy
-            do_sample=False,
-        )
-    
-    # 生成テキストをデコード
-    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    
-    # 最後の部分（プロンプト以降）を抽出
-    response_text = generated_text[len(prompt):].strip() if len(generated_text) > len(prompt) else ""
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a strict evaluator of soccer video QA model outputs. Always output valid JSON only, no other text."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=128,
+                temperature=0
+            )
+            response_text = response.choices[0].message.content.strip()
+            break
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(1)
+                continue
+            reason = f"api error: {e}"
     
     # JSON を抽出
-    json_obj = extract_json_from_text(response_text)
-    
-    if json_obj and 'score' in json_obj and 'reason' in json_obj:
-        score = int(json_obj['score'])
-        reason = str(json_obj['reason'])
-        # 0-100 を 0-1 に正規化
-        score = max(0.0, min(1.0, score / 100.0))
-    else:
-        score = 0.0
-        reason = "parse error"
+    if response_text:
+        json_obj = extract_json_from_text(response_text)
+        
+        if json_obj and 'score' in json_obj and 'reason' in json_obj:
+            score = int(json_obj['score'])
+            reason = str(json_obj['reason'])
+            # 0-100 を 0-1 に正規化
+            score = max(0.0, min(1.0, score / 100.0))
+        else:
+            score = 0.0
+            reason = "parse error"
     
     return score, reason
 
@@ -186,9 +190,9 @@ def main():
     
     print(f"Found {len(configs)} configs: {configs}")
     
-    # Judge LLM をロード
-    tokenizer, model = load_judge_model(args.llm_ckpt, args.device)
-    device = args.device if args.device == "cpu" else f"{args.device}:{args.gpu}"
+    # OpenAI 互換 API クライアントをセットアップ
+    client = setup_client(args.base_url, args.api_key)
+    print(f"Judge model: {args.model} @ {args.base_url}")
     
     summary_data = []
     
@@ -215,7 +219,8 @@ def main():
         for i, entry in enumerate(entries):
             clip_id = entry.get('clip_id', '')
             spatial = spatial_labels.get(clip_id)
-            score, reason = judge_entry(entry, tokenizer, model, device, spatial=spatial, config_name=config_name)
+            score, reason = judge_entry(entry, client, args.model, spatial=spatial, config_name=config_name)
+            time.sleep(0.5)
             
             result_entry = entry.copy()
             result_entry['score'] = score

@@ -927,13 +927,17 @@ eval_llm_baseline_judge:
 	$(MAKE) eval_llm_baseline GPU=$(GPU) CLIP_IDS_FROM=$(CLIP_IDS_FROM)
 	$(MAKE) eval_phase4_judge PHASE4_DIR=checkpoints/llm_baseline GPU=$(GPU)
 
-# 使い方: make eval_phase4_judge RUN_TS=202605XXXXXX USE_LINEAR=1 GPU=0
+# 使い方: make eval_phase4_judge PHASE4_DIR=checkpoints/RUN_TS/phase4_TAG
+# GitHub Models 使用時: GITHUB_TOKEN 環境変数が必要
+# OpenAI API 使用時:    OPENAI_API_KEY 環境変数が必要、JUDGE_BASE_URL=https://api.openai.com/v1 を指定
+JUDGE_MODEL   ?= gpt-4o
+JUDGE_BASE_URL ?= https://models.inference.ai.azure.com
 eval_phase4_judge:
-	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_phase4_judge.py \
+	python tracking/eval_phase4_judge.py \
 	    --phase4_dir $(if $(PHASE4_DIR),$(PHASE4_DIR),$(PHASE4_ALL_DIR)) \
-	    --llm_ckpt meta-llama/Meta-Llama-3-8B-Instruct \
-	    --configs $(PHASE4_CONFIGS) \
-	    --device $(DEVICE)
+	    --model $(JUDGE_MODEL) \
+	    --base_url $(JUDGE_BASE_URL) \
+	    --configs $(PHASE4_CONFIGS)
 
 # 使い方: make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0 FEWSHOT=0
 #         make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0 FEWSHOT=1

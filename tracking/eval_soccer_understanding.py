@@ -4,10 +4,6 @@ import os
 import re
 from typing import List, Dict, Any
 
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
-
 BENCHMARK = [
     # --- Dimension 1: Rules / Logic ---
     {"id": "D1Q1", "dim": 1,
@@ -127,6 +123,7 @@ def eval_dim3(answer: str, keyword_groups: List[List[str]]) -> float:
 
 def ask(tokenizer, model, question: str, max_new_tokens: int, few_shot: bool = False) -> str:
     """Generate answer using chat template (Gemini-recommended pattern for Qwen2.5)."""
+    import torch
     messages = [
         {"role": "system", "content": "You are a knowledgeable soccer expert. Answer concisely in plain text only."},
     ]
@@ -177,6 +174,7 @@ def main():
     os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
     
     # Load model and tokenizer
+    from transformers import AutoTokenizer, AutoModelForCausalLM
     print(f"Loading model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     # AWQ/GPTQ models manage dtype internally; float16 causes overflow on pre-Ampere GPUs with Qwen2.5
