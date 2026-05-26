@@ -31,10 +31,11 @@
 > Judge モデルとして使用する LLM のサッカー理解度を定量評価。スクリプト: `tracking/eval_soccer_understanding.py`
 > **SUS = D1×0.30 + D2×0.70**（客観ラベルのある次元のみ。D3 戦術推論はラベル不在のため補足参考値）
 
-| モデル | D1 Rules↑ | D2 Spatial↑ | D3 Tactical（参考）↑ | **SUS↑** | 備考 |
-|---|---|---|---|---|---|
-| LLaMA-3-8B-Instruct | 25.0% | 60.0% | 58.3% | **49.5%** | **Judge 採用** |
-| LLaMA-3.1-8B-Instruct | 25.0% | 40.0% | 33.3% | **35.5%** | LLaMA-3 に劣るため不採用 |
+| モデル | プロンプト | D1 Rules↑ | D2 Spatial↑ | D3 Tactical（参考）↑ | **SUS↑** | 備考 |
+|---|---|---|---|---|---|---|
+| LLaMA-3-8B-Instruct | zero-shot | 25.0% | 60.0% | 58.3% | **49.5%** | **Judge 採用** |
+| LLaMA-3-8B-Instruct | few-shot | 50.0% | 20.0% | 33.3% | 29.0% | D2 大幅悪化・不採用 |
+| LLaMA-3.1-8B-Instruct | zero-shot | 25.0% | 40.0% | 33.3% | 35.5% | LLaMA-3 に劣るため不採用 |
 
 ### D1 個別結果（LLaMA-3-8B）
 - Q1 バックパス間接FK: ✓（"Indirect free kick to the opposing team."）

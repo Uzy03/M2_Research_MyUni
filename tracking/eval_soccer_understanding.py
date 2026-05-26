@@ -24,20 +24,20 @@ BENCHMARK = [
      "ground_truths": ["corner kick", "corner"]},
     # --- Dimension 2: Spatial / Formation ---
     {"id": "D2Q1", "dim": 2,
-     "question": "A team has 4 defenders in a flat line near their own box, 1 holding midfielder in front of them, 2 central midfielders further up, 2 wide midfielders, and 1 striker. What formation is this? Answer only with the formation code (e.g. 4-4-2).",
-     "regex": r"4-1-4-1|4-3-3|4-1-2-2-1"},
+     "question": "A team has 4 defenders in a flat line near their own box, 1 holding midfielder in front of them, 2 central midfielders further up, 2 wide midfielders, and 1 striker. What formation is this?\nWhich formation code best describes this lineup?\nA) 4-4-2  B) 4-1-4-1  C) 4-3-3  D) 4-2-3-1\nAnswer with a single letter only (A, B, C, or D).",
+     "correct": "B"},
     {"id": "D2Q2", "dim": 2,
-     "question": "A team is lined up with 3 central defenders, 2 wing-backs pushing high on the flanks, 2 central midfielders, 2 attacking midfielders playing just behind 1 central striker. What formation is this? Answer only with the formation code.",
-     "regex": r"3-4-2-1|5-2-2-1|3-4-3"},
+     "question": "A team is lined up with 3 central defenders, 2 wing-backs pushing high on the flanks, 2 central midfielders, 2 attacking midfielders playing just behind 1 central striker. What formation is this?\nWhich formation code best describes this lineup?\nA) 4-2-3-1  B) 4-4-2  C) 3-4-2-1  D) 5-3-2\nAnswer with a single letter only (A, B, C, or D).",
+     "correct": "C"},
     {"id": "D2Q3", "dim": 2,
-     "question": "The defending team has 4 defenders, a midfield diamond consisting of 1 defensive midfielder, 2 central midfielders, and 1 attacking midfielder, supporting 2 strikers up front. What formation is this? Answer only with the formation code.",
-     "regex": r"4-4-2|4-1-2-1-2"},
+     "question": "The defending team has 4 defenders, a midfield diamond consisting of 1 defensive midfielder, 2 central midfielders, and 1 attacking midfielder, supporting 2 strikers up front. What formation is this?\nWhich formation code best describes this lineup?\nA) 4-2-3-1  B) 4-4-2  C) 4-3-3  D) 4-1-2-1-2\nAnswer with a single letter only (A, B, C, or D).",
+     "correct": "D"},
     {"id": "D2Q4", "dim": 2,
-     "question": "A team plays with 4 defenders, 2 holding defensive midfielders side-by-side, 3 attacking midfielders (1 central, 2 wide), and 1 main striker. What formation is this? Answer only with the formation code.",
-     "regex": r"4-2-3-1"},
+     "question": "A team plays with 4 defenders, 2 holding defensive midfielders side-by-side, 3 attacking midfielders (1 central, 2 wide), and 1 main striker. What formation is this?\nWhich formation code best describes this lineup?\nA) 4-1-4-1  B) 4-4-2  C) 4-2-3-1  D) 4-3-3\nAnswer with a single letter only (A, B, C, or D).",
+     "correct": "C"},
     {"id": "D2Q5", "dim": 2,
-     "question": "The lineup features 3 central defenders, 1 holding midfielder, 2 wide midfielders, 2 central midfielders, and 2 strikers. What formation is this? Answer only with the formation code.",
-     "regex": r"3-1-4-2|3-5-2"},
+     "question": "The lineup features 3 central defenders, 1 holding midfielder, 2 wide midfielders, 2 central midfielders, and 2 strikers. What formation is this?\nWhich formation code best describes this lineup?\nA) 4-4-2  B) 4-3-3  C) 4-2-3-1  D) 3-5-2\nAnswer with a single letter only (A, B, C, or D).",
+     "correct": "D"},
     # --- Dimension 3: Tactical Reasoning ---
     {"id": "D3Q1", "dim": 3,
      "question": "The attacking team continuously passes on the left flank, drawing the opponent's defensive block heavily to that side. Suddenly, they play a long diagonal pass to their right winger who is left unguarded. What is the tactical intent of this sequence?",
@@ -82,12 +82,12 @@ FEW_SHOT_EXAMPLES = [
     ],
     # D2 - Formation
     [
-        "A team has 4 defenders in a flat line, 4 midfielders in a flat line, and 2 strikers up front. What formation is this? Answer only with the formation code (e.g. 4-4-2).",
-        "4-4-2"
+        "A team plays with 4 defenders, 4 midfielders in a flat line, and 2 strikers up front.\nWhich formation code best describes this lineup?\nA) 4-3-3  B) 3-5-2  C) 4-2-3-1  D) 4-4-2\nAnswer with a single letter only (A, B, C, or D).",
+        "D"
     ],
     [
-        "A team lines up with 3 central defenders, 5 midfielders across the pitch, and 2 strikers. What formation is this? Answer only with the formation code.",
-        "3-5-2"
+        "A team has 3 central defenders, 5 midfielders across the pitch, and 2 strikers.\nWhich formation code best describes this lineup?\nA) 4-4-2  B) 4-3-3  C) 3-5-2  D) 4-2-3-1\nAnswer with a single letter only (A, B, C, or D).",
+        "C"
     ],
     # D3 - Tactical
     [
@@ -112,14 +112,10 @@ def clean_answer(answer: str) -> str:
     return re.sub(r'\s+', ' ', answer.replace('!', ' ')).strip()
 
 
-def eval_dim2(answer: str, regex: str) -> float:
-    """Regex match. Also accepts dashless form (e.g. '4231' → '4-2-3-1')."""
-    if re.search(regex, answer):
-        return 1.0
-    # Extract digit sequence and insert dash between every digit
-    digits = re.findall(r'\d', answer)
-    normalized = '-'.join(digits)
-    return 1.0 if re.search(regex, normalized) else 0.0
+def eval_dim2(answer: str, correct: str) -> float:
+    """MCQ letter match (A/B/C/D). Extracts first valid letter from answer."""
+    match = re.search(r'\b([A-D])\b', answer.upper())
+    return 1.0 if (match and match.group(1) == correct) else 0.0
 
 
 def eval_dim3(answer: str, keyword_groups: List[List[str]]) -> float:
@@ -212,7 +208,7 @@ def main():
             score = eval_dim1(cleaned, item["ground_truths"])
             dim1_scores.append(score)
         elif dim == 2:
-            score = eval_dim2(cleaned, item["regex"])
+            score = eval_dim2(cleaned, item["correct"])
             dim2_scores.append(score)
             if score == 0.0:
                 dim2_incorrect.append((item["id"], item["question"], answer))
