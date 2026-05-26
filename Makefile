@@ -927,14 +927,15 @@ eval_llm_baseline_judge:
 	$(MAKE) eval_llm_baseline GPU=$(GPU) CLIP_IDS_FROM=$(CLIP_IDS_FROM)
 	$(MAKE) eval_phase4_judge PHASE4_DIR=checkpoints/llm_baseline GPU=$(GPU)
 
-# 使い方: make eval_phase4_judge PHASE4_DIR=checkpoints/RUN_TS/phase4_TAG
+# 使い方: make eval_phase4_judge PHASE4_ALL_DIR=checkpoints/RUN_TS/phase4_TAG
+# Groq 使用時:         GITHUB_TOKEN=<GROQ_API_KEY> JUDGE_BASE_URL=https://api.groq.com/openai/v1 JUDGE_MODEL=llama-3.3-70b-versatile
 # GitHub Models 使用時: GITHUB_TOKEN 環境変数が必要
 # OpenAI API 使用時:    OPENAI_API_KEY 環境変数が必要、JUDGE_BASE_URL=https://api.openai.com/v1 を指定
 JUDGE_MODEL   ?= gpt-4o
 JUDGE_BASE_URL ?= https://models.inference.ai.azure.com
 eval_phase4_judge:
 	python tracking/eval_phase4_judge.py \
-	    --phase4_dir $(if $(PHASE4_DIR),$(PHASE4_DIR),$(PHASE4_ALL_DIR)) \
+	    --phase4_dir $(PHASE4_ALL_DIR) \
 	    --model $(JUDGE_MODEL) \
 	    --base_url $(JUDGE_BASE_URL) \
 	    --configs $(PHASE4_CONFIGS)
