@@ -938,6 +938,7 @@ eval_phase4_judge:
 	    --phase4_dir $(PHASE4_ALL_DIR) \
 	    --model $(JUDGE_MODEL) \
 	    --base_url $(JUDGE_BASE_URL) \
+	    --api_key $(GITHUB_TOKEN) \
 	    --configs $(PHASE4_CONFIGS)
 
 # 使い方: make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0 FEWSHOT=0
