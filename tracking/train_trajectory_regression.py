@@ -182,10 +182,10 @@ def main():
     model = TrajectoryRegressionModel(
         K=args.K,
         N=23,
-        num_query=32,
         d_model=256,
         num_features=5,
         pool_mode=args.pool_mode,
+        context_len=args.context_len,
     )
     model.to(args.device)
     print(f"Model initialized and moved to {args.device}")

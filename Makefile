@@ -38,20 +38,22 @@ REGRESSION_CSV  := results/trajectory_regression_inference.csv
 
 QA_CONFIG       ?= configs/qa_action.json
 
+# チェックポイント保存先ベースディレクトリ（v1以降は checkpoints_v1 を使用）
+CKPT_BASE             ?= checkpoints_v1
 # Experiment run directory (timestamped)
 RUN_TS     ?= $(shell date +%Y%m%d%H%M)
-RUN_DIR    ?= checkpoints/$(RUN_TS)
+RUN_DIR    ?= $(CKPT_BASE)/$(RUN_TS)
 PHASE1_DIR       = $(RUN_DIR)/phase1
 # Phase2タグ: init重み(1 or 15) × 指示多様化(0 or 1) でディレクトリを区別
 USE_LINEAR            ?= 0
 PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)$(if $(filter 1,$(USE_SPATIAL)),_spatial,)$(if $(filter player_tokens,$(POOL_MODE)),_ptok,)
-SHARED_PHASE1_DIR     = checkpoints/phase1$(if $(filter player_tokens,$(POOL_MODE)),_ptok,)
+SHARED_PHASE1_DIR     = $(CKPT_BASE)/phase1$(if $(filter player_tokens,$(POOL_MODE)),_ptok,)
 SHARED_PHASE1_CKPT    = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
-SHARED_PHASE1_5_DIR   ?= checkpoints/phase1_5
+SHARED_PHASE1_5_DIR   ?= $(CKPT_BASE)/phase1_5
 SHARED_PHASE1_5_CKPT  = $(SHARED_PHASE1_5_DIR)/encoder_contrastive.pth
-SHARED_PHASE2_DIR     = checkpoints/phase2_$(PHASE2_TAG)
+SHARED_PHASE2_DIR     = $(CKPT_BASE)/phase2_$(PHASE2_TAG)
 SHARED_PHASE2_CKPT    = $(SHARED_PHASE2_DIR)/action_alignment.pth
-SHARED_PHASE2_5_DIR   = checkpoints/phase2_5_$(PHASE2_TAG)
+SHARED_PHASE2_5_DIR   = $(CKPT_BASE)/phase2_5_$(PHASE2_TAG)
 SHARED_PHASE2_5_CKPT  = $(SHARED_PHASE2_5_DIR)/action_alignment.pth
 USE_PHASE1_5          ?= 0
 USE_PHASE2_5          ?= 0
