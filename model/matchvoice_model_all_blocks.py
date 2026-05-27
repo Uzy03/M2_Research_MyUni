@@ -82,7 +82,7 @@ class matchvoice_model_all_blocks(nn.Module):
         self.open_llm_decoder = open_llm_decoder
         # print("AA", open_llm_decoder)
         self.llama_model = AutoModelForCausalLM.from_pretrained(llm_ckpt, torch_dtype=torch.float16)
-        self.llama_model.resize_token_embeddings(len(self.tokenizer))
+        self.llama_model.resize_token_embeddings(len(self.tokenizer), mean_resizing=False)
         self.use_ans_token = use_ans_token
         self.ans_token_id = self.tokenizer.convert_tokens_to_ids("<ANS>")
         self.use_chat_template = use_chat_template

@@ -8,21 +8,30 @@
 
 ## スコア一覧
 
-> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。Judge スコアは 0-1 スケール（LLaMA-3-8B-Instruct による 0-100 点採点を正規化、n=20）。formation/def.line は spatial_labels.json（ルールベース K-Means）を Ground Truth として使用。
+> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。Judge スコアは 0-1 スケール（**GPT-4o** による 0-100 点採点を正規化、n=20）。formation/def.line は spatial_labels.json（ルールベース K-Means）を Ground Truth として使用。
+>
+> **GPT-4o Judge 完了（2026-05-27）** — judge_summary.csv パス（サーバー）:
+> - `checkpoints/202605172348/phase4_init1_div1_hubqformer/judge_summary.csv` ✅
+> - `checkpoints/202605180002/phase4_init1_div1_hublinear/judge_summary.csv` ⚠️ Linear hub修正前・再実行要
+> - `checkpoints/202605180023/phase4_init1_div1_hubqformer/judge_summary.csv` ✅
+> - `checkpoints/202605180039/phase4_init1_div1_hublinear/judge_summary.csv` ⚠️ Linear hub修正前・再実行要
+> - `checkpoints/llm_baseline/judge_summary.csv` ✅
 
 | init | hub | P2.5 | P3 run | P2 F1↑ | P2.5 F1↑ | P3 F1↑ | formation↑ | commentary↑ | att.intent↑ | def.intent↑ | def.line↑ |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Phase1 | Q-Former | なし | 202605172348 | 0.7533 | - | 0.6691 | 0.0000 | 0.2375 | 0.0125 | 0.0125 | 0.0000 |
-| Phase1 | Q-Former | あり | 202605180023 | 0.7533 | 0.7881 | 0.6604 | 0.0500 | 0.3375 | **0.7500** | **0.7500** | 0.1875 |
-| Phase1 | Linear | なし | 202605180002 | 0.7019 | - | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| Phase1 | Linear | あり | 202605180039 | 0.7019 | **0.9351** | **0.6775** | 0.1000 | **0.6750** | 0.7125 | 0.6750 | 0.0000 |
-| **LLM Baseline** | | | (metadata only) | - | - | - | **0.4250** | 0.7125 | **0.7500** | **0.7500** | **0.2750** |
+| Phase1 | Q-Former | なし | 202605172348 | 0.7533 | - | 0.6691 | 0.0000 | 0.2375 | 0.0500 | 0.0000 | 0.0000 |
+| Phase1 | Q-Former | あり | 202605180023 | 0.7533 | 0.7881 | 0.6604 | 0.1875 | 0.2875 | 0.6625 | 0.2375 | 0.4375 |
+| Phase1 | Linear | なし | 202605180002 | 0.7019 | - | 0.0000 | ⚠️0.0000 | ⚠️0.0000 | ⚠️0.0000 | ⚠️0.0000 | ⚠️0.0375 |
+| Phase1 | Linear | あり | 202605180039 | 0.7019 | **0.9351** | **0.6775** | ⚠️0.2625 | ⚠️0.3250 | ⚠️0.6250 | ⚠️0.6625 | ⚠️0.0000 |
+| **LLM Baseline** | | | (metadata only) | - | - | - | **0.5875** | **0.7625** | **0.9000** | **0.9125** | **0.5125** |
 | Phase1.5 | Q-Former | なし | 202605141535 | 0.6116 | - | 0.6004 | - | - | - | - | - |
 | Phase1.5 | Q-Former | あり | - | 0.6116 | - | - | - | - | - | - | - |
 | Phase1.5 | Linear | なし | 202605141549 | 0.6516 | - | 0.0000 | - | - | - | - | - |
 | Phase1.5 | Linear | あり | - | 0.6516 | - | - | - | - | - | - |
-| Phase1 | Q-Former | P2.5.1 | 202605202300 | 0.7533 | 0.8414 | **0.8615** | **0.1875** | **0.4625** | **0.7500** | **0.7500** | **0.2000** |
-| Phase1 | Linear | P2.5.1 | 202605211053 | 0.7019 | 0.8842 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0375 | - |
+| Phase1 | Q-Former | P2.5.1 | 202605202300 | 0.7533 | 0.8414 | **0.8615** | - | - | - | - | - |
+| Phase1 | Linear | P2.5.1 | 202605211053 | 0.7019 | 0.8842 | 0.0000 | - | - | - | - | - |
+
+> ⚠️ = Linear hub修正前の実行のため再実行要。GPT-4o Judge スコアは完了後に記入。
 
 ---
 
