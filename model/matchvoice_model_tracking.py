@@ -18,7 +18,7 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         samples['mask']: (B, T, N) - マスク (オプション)
     """
     
-    def __init__(self, num_players=23, in_features=5, d_model=256, use_linear=False, **kwargs):
+    def __init__(self, num_players=23, in_features=5, d_model=256, use_linear=False, pool_mode='mean_pool', **kwargs):
         """
         Args:
             num_players (int): 選手数（デフォルト: 23）
@@ -55,6 +55,7 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
             in_features=in_features,
             d_model=d_model,
             out_features=out_features,
+            pool_mode=pool_mode,
         )
     
     def forward(self, samples, validating=False, lambda_align=0.0, lambda_slot=0.0):
@@ -118,8 +119,7 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
         frame_hidden_state = einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h', b=batch_size, t=time_length)
         frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(frame_hidden_state)
         if self.use_linear:
-            video_feat = frame_hidden_state.mean(dim=1)   # (B, H)
-            inputs_llama = self.llama_proj(video_feat).unsqueeze(1)  # (B, 1, llm_hidden)
+            inputs_llama = self.llama_proj(frame_hidden_state)  # (B, T_or_N, llm_hidden)
         else:
             if self.qformer_heads > 1:
                 head_outputs = []
@@ -265,8 +265,7 @@ class matchvoice_model_tracking(matchvoice_model_all_blocks):
                                 dtype=torch.long).to(frame_hidden_state)
 
         if self.use_linear:
-            video_feat = frame_hidden_state.mean(dim=1)
-            inputs_llama = self.llama_proj(video_feat).unsqueeze(1)
+            inputs_llama = self.llama_proj(frame_hidden_state)  # (B, T_or_N, llm_hidden)
         else:
             video_query_tokens = self.video_query_tokens.expand(batch_size, -1, -1).to(
                 frame_hidden_state.device)

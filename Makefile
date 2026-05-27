@@ -44,8 +44,8 @@ RUN_DIR    ?= checkpoints/$(RUN_TS)
 PHASE1_DIR       = $(RUN_DIR)/phase1
 # Phase2タグ: init重み(1 or 15) × 指示多様化(0 or 1) でディレクトリを区別
 USE_LINEAR            ?= 0
-PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)$(if $(filter 1,$(USE_SPATIAL)),_spatial,)
-SHARED_PHASE1_DIR     = checkpoints/phase1
+PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)$(if $(filter 1,$(USE_SPATIAL)),_spatial,)$(if $(filter player_tokens,$(POOL_MODE)),_ptok,)
+SHARED_PHASE1_DIR     = checkpoints/phase1$(if $(filter player_tokens,$(POOL_MODE)),_ptok,)
 SHARED_PHASE1_CKPT    = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
 SHARED_PHASE1_5_DIR   ?= checkpoints/phase1_5
 SHARED_PHASE1_5_CKPT  = $(SHARED_PHASE1_5_DIR)/encoder_contrastive.pth
@@ -69,6 +69,7 @@ PHASE2_5_CKPT    = $(PHASE2_5_DIR)/action_alignment.pth
 QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
 USE_SPATIAL     ?= 0
+POOL_MODE       ?= mean_pool
 LAMBDA_SPATIAL  ?= 0.1
 SAVE_INTERVAL   ?= 10
 OPEN_LORA       ?= 0
@@ -474,6 +475,7 @@ train_trajectory_regression:
 	    --batch_size $(BATCH_PHASE1) \
 	    --epochs $(EPOCHS_PHASE1) \
 	    --max_games $(MAX_GAMES) \
+	    --pool_mode $(POOL_MODE) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE1_DIR)/train.log
 
@@ -524,6 +526,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(USE_LLM_QA)),--use_llm_qa,) \
 	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
 	    $(if $(filter 1,$(USE_SPATIAL)),--spatial_labels $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json,) \
+	    --pool_mode $(POOL_MODE) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 

@@ -114,6 +114,9 @@ def main():
         default="cuda",
         help="計算デバイス",
     )
+    parser.add_argument('--pool_mode', type=str, default='mean_pool',
+                        choices=['mean_pool', 'player_tokens'],
+                        help='Encoder pooling mode')
 
     args = parser.parse_args()
 
@@ -162,6 +165,7 @@ def main():
         in_features=5,
         d_model=256,
         max_frame_pos=200,
+        pool_mode=args.pool_mode,
     )
     model.to(args.device)
     print(f"Model initialized and moved to {args.device}")

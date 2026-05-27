@@ -11,7 +11,7 @@ from tracking.encoder import TrackingEncoder
 
 
 class TrajectoryRegressionModel(nn.Module):
-    def __init__(self, K=5, N=23, num_query=32, d_model=256, num_features=5):
+    def __init__(self, K=5, N=23, num_query=32, d_model=256, num_features=5, pool_mode='mean_pool'):
         """
         Args:
             K: Number of future frames to predict
@@ -33,7 +33,8 @@ class TrajectoryRegressionModel(nn.Module):
             nhead=4,
             num_spatial_layers=2,
             num_temporal_layers=2,
-            out_features=768
+            out_features=768,
+            pool_mode=pool_mode,
         )
         
         # Q-Former initialization (same pattern as matchvoice_model_all_blocks.py)

@@ -29,12 +29,14 @@ class TrackingEncoder(nn.Module):
         num_spatial_layers: int = 2,
         num_temporal_layers: int = 2,
         out_features: int = 768,
+        pool_mode: str = 'mean_pool',
     ):
         super().__init__()
 
         self.num_players = num_players
         self.in_features = in_features
         self.d_model = d_model
+        self.pool_mode = pool_mode
 
         # 入力特徴をモデル次元に埋め込む
         self.player_embed = nn.Linear(in_features, d_model)
@@ -81,7 +83,7 @@ class TrackingEncoder(nn.Module):
                 Trueが欠損選手。Noneなら全て有効。
 
         Returns:
-            torch.Tensor: 出力特徴。shape (B, T, out_features=768)
+            torch.Tensor: 出力特徴。shape (B, T_or_N, out_features=768)
         """
         B, T, N, F = x.shape
 
@@ -105,20 +107,22 @@ class TrackingEncoder(nn.Module):
         # 空間トランスフォーマー
         x = self.spatial_transformer(x, src_key_padding_mask=src_key_padding_mask)
 
-        # 選手次元でmean pooling（マスク済み選手を除外）(B*T, N, d_model) -> (B*T, d_model)
-        if src_key_padding_mask is not None:
-            valid = (~src_key_padding_mask).float().unsqueeze(-1)  # (B*T, N, 1)
-            x = (x * valid).sum(dim=1) / valid.sum(dim=1).clamp(min=1)
-        else:
-            x = x.mean(dim=1)
+        if self.pool_mode == 'player_tokens':
+            # (B*T, N, d_model) -> (B, T, N, d_model) -> (B*N, T, d_model)
+            x = x.reshape(B, T, N, self.d_model)
+            x = x.permute(0, 2, 1, 3).reshape(B * N, T, self.d_model)
+            x = self.temporal_transformer(x)  # (B*N, T, d_model)
+            # T方向 mean pool -> (B*N, d_model) -> (B, N, d_model)
+            x = x.mean(dim=1).reshape(B, N, self.d_model)
+        else:  # 'mean_pool': 既存の動作を維持
+            if src_key_padding_mask is not None:
+                valid = (~src_key_padding_mask).float().unsqueeze(-1)  # (B*T, N, 1)
+                x = (x * valid).sum(dim=1) / valid.sum(dim=1).clamp(min=1)
+            else:
+                x = x.mean(dim=1)
+            x = x.reshape(B, T, self.d_model)
+            x = self.temporal_transformer(x)  # (B, T, d_model)
 
-        # (B*T, d_model) -> (B, T, d_model)
-        x = x.reshape(B, T, self.d_model)
-
-        # 時間アテンション：タイムステップ間の時系列関係をモデル
-        x = self.temporal_transformer(x)
-
-        # 出力投影 (B, T, d_model) -> (B, T, out_features=768)
+        # 出力投影 (B, T_or_N, d_model) -> (B, T_or_N, out_features=768)
         x = self.out_proj(x)
-
         return x

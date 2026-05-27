@@ -237,9 +237,7 @@ class matchvoice_model_all_blocks(nn.Module):
         frame_hidden_state =  einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h',b=batch_size,t=time_length)
         frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(frame_hidden_state)
         if self.use_linear:
-            # (B, T*Q, H) -> mean pool -> (B, H) -> llama_proj -> (B, 1, llm_hidden)
-            video_feat = frame_hidden_state.mean(dim=1)
-            inputs_llama = self.llama_proj(video_feat).unsqueeze(1)
+            inputs_llama = self.llama_proj(frame_hidden_state)  # (B, T_or_N, llm_hidden)
         else:
             if self.qformer_heads > 1:
                 head_outputs = []
