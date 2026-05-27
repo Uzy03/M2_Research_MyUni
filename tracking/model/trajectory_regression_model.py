@@ -35,14 +35,16 @@ class TrajectoryRegressionModel(nn.Module):
             pool_mode=pool_mode,
         )
         
-        seq_len = N if pool_mode == 'player_tokens' else context_len
-        input_dim = seq_len * 768
-
-        self.regression_head = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, K * N * 2)
-        )
+        self.pool_mode = pool_mode
+        if pool_mode == 'player_tokens':
+            self.regression_head = nn.Linear(768, K * 2)
+        else:
+            input_dim = context_len * 768
+            self.regression_head = nn.Sequential(
+                nn.Linear(input_dim, 256),
+                nn.ReLU(),
+                nn.Linear(256, K * N * 2)
+            )
     
     def forward(self, tracking, mask):
         """
@@ -55,8 +57,12 @@ class TrajectoryRegressionModel(nn.Module):
         """
         B = tracking.shape[0]
         frame_feat = self.tracking_encoder(tracking, mask)  # (B, T_or_N, 768)
-        flat = frame_feat.reshape(B, -1)                    # (B, T_or_N * 768)
-        pred = self.regression_head(flat).view(B, self.K, self.N, 2)
+        if self.pool_mode == 'player_tokens':
+            pred = self.regression_head(frame_feat).view(B, self.N, self.K, 2)
+            pred = pred.permute(0, 2, 1, 3).contiguous()
+        else:
+            flat = frame_feat.reshape(B, -1)
+            pred = self.regression_head(flat).view(B, self.K, self.N, 2)
         return pred
     
     def compute_loss(self, pred, target_xy, target_mask):
