@@ -7,8 +7,7 @@ import re
 import time
 from pathlib import Path
 
-import urllib.request
-import urllib.error
+import requests as _requests
 
 
 def parse_args():
@@ -128,7 +127,7 @@ def judge_entry(entry, client, model_name, spatial=None, config_name=""):
     reason = "api error"
     
     url = f"{client['base_url']}/chat/completions"
-    payload = json.dumps({
+    body = {
         "model": model_name,
         "messages": [
             {"role": "system", "content": "You are a strict evaluator of soccer video QA model outputs. Always output valid JSON only, no other text."},
@@ -136,31 +135,34 @@ def judge_entry(entry, client, model_name, spatial=None, config_name=""):
         ],
         "max_tokens": 128,
         "temperature": 0
-    }).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {client['api_key']}"
     }
+    headers = {"Authorization": f"Bearer {client['api_key']}"}
 
     for attempt in range(5):
         try:
-            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                resp_json = json.loads(resp.read().decode("utf-8"))
-            response_text = resp_json["choices"][0]["message"]["content"].strip()
+            resp = _requests.post(url, json=body, headers=headers, timeout=30)
+            if resp.status_code == 429:
+                print(f"    HTTP 429 (attempt {attempt+1}/5), waiting 60s...")
+                time.sleep(60)
+                continue
+            if resp.status_code != 200:
+                wait = 5
+                print(f"    HTTP {resp.status_code} (attempt {attempt+1}/5), waiting {wait}s...")
+                time.sleep(wait)
+                if attempt == 4:
+                    return None, f"api error: HTTP {resp.status_code}"
+                continue
+            response_text = resp.json()["choices"][0]["message"]["content"].strip()
             break
-        except urllib.error.HTTPError as e:
-            wait = 60 if e.code == 429 else 5
-            print(f"    HTTP {e.code} (attempt {attempt+1}/5), waiting {wait}s...")
-            time.sleep(wait)
-            if attempt == 4:
-                reason = f"api error: HTTP {e.code}"
         except Exception as e:
             if attempt < 4:
                 time.sleep(5)
                 continue
-            reason = f"api error: {e}"
+            return None, f"api error: {e}"
     
+    if response_text is None:
+        return None, "api error: no response"
+
     # JSON を抽出
     if response_text:
         json_obj = extract_json_from_text(response_text)
@@ -234,9 +236,12 @@ def main():
         if judge_json_path.exists():
             with open(judge_json_path, 'r', encoding='utf-8') as f:
                 prev = json.load(f)
-            # api error でないエントリのみ有効とみなす
-            existing = {r['clip_id']: r for r in prev if not str(r.get('reason', '')).startswith('api error')}
-            print(f"  Resume: {len(existing)} valid entries already scored")
+            # モデル名が一致するエントリのみ有効とみなす
+            existing = {
+                r['clip_id']: r for r in prev
+                if r.get('judge_model') == args.model
+            }
+            print(f"  Resume: {len(existing)} valid entries already scored (model={args.model})")
 
         # 各エントリを評価
         judge_results = []
@@ -255,9 +260,14 @@ def main():
             score, reason = judge_entry(entry, client, args.model, spatial=spatial, config_name=config_name)
             time.sleep(5)  # GitHub Models: 15rpm → 4s/req + margin
 
+            if score is None:
+                print(f"    [{clip_id}] skipped (api error: {reason})")
+                continue
+
             result_entry = entry.copy()
             result_entry['score'] = score
             result_entry['reason'] = reason
+            result_entry['judge_model'] = args.model
             judge_results.append(result_entry)
             scores.append(score)
 
