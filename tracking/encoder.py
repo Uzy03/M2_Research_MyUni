@@ -107,21 +107,17 @@ class TrackingEncoder(nn.Module):
         # 空間トランスフォーマー
         x = self.spatial_transformer(x, src_key_padding_mask=src_key_padding_mask)
 
+        # 両モード共通: 選手ごとにT方向の時系列をモデル
+        # (B*T, N, d_model) -> (B, T, N, d_model) -> (B*N, T, d_model)
+        x = x.reshape(B, T, N, self.d_model)
+        x = x.permute(0, 2, 1, 3).reshape(B * N, T, self.d_model)
+        x = self.temporal_transformer(x)  # (B*N, T, d_model)
+
         if self.pool_mode == 'player_tokens':
-            # (B*T, N, d_model) -> (B, T, N, d_model) -> (B*N, T, d_model)
-            x = x.reshape(B, T, N, self.d_model)
-            x = x.permute(0, 2, 1, 3).reshape(B * N, T, self.d_model)
-            x = self.temporal_transformer(x)  # (B*N, T, d_model)
-            # T方向 mean pool -> (B*N, d_model) -> (B, N, d_model)
-            x = x.mean(dim=1).reshape(B, N, self.d_model)
-        else:  # 'mean_pool': 既存の動作を維持
-            if src_key_padding_mask is not None:
-                valid = (~src_key_padding_mask).float().unsqueeze(-1)  # (B*T, N, 1)
-                x = (x * valid).sum(dim=1) / valid.sum(dim=1).clamp(min=1)
-            else:
-                x = x.mean(dim=1)
-            x = x.reshape(B, T, self.d_model)
-            x = self.temporal_transformer(x)  # (B, T, d_model)
+            # T方向mean pool → N個の選手トークン
+            x = x.mean(dim=1).reshape(B, N, self.d_model)  # (B, N, d_model)
+        else:  # 'mean_pool': N方向mean pool → T個の時間トークン
+            x = x.reshape(B, N, T, self.d_model).mean(dim=1)  # (B, T, d_model)
 
         # 出力投影 (B, T_or_N, d_model) -> (B, T_or_N, out_features=768)
         x = self.out_proj(x)
