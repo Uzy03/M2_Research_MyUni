@@ -1,0 +1,4 @@
+{
+    "instruction": "What formation is the defending team using in this soccer sequence? Choose one:\n(A) 4-4-2\n(B) 4-3-3\n(C) 3-5-2\n(D) 4-2-3-1\nAnswer with only the letter A, B, C, or D.",
+    "max_new_tokens": 5
+}

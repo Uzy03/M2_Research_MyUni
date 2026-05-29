@@ -16,6 +16,13 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from tqdm import tqdm
 
+FORMATION_MCQ_TEMPLATES = {
+    "4-4-2":   [0.25]*4 + [0.50]*4 + [0.75]*2,
+    "4-3-3":   [0.25]*4 + [0.50]*3 + [0.75]*3,
+    "3-5-2":   [0.25]*3 + [0.50]*5 + [0.75]*2,
+    "4-2-3-1": [0.20]*4 + [0.40]*2 + [0.60]*3 + [0.80]*1,
+}
+
 
 def load_tracking_data(npy_path, mask_path):
     """Load tracking data and mask.
@@ -123,71 +130,22 @@ def get_gk_slot(team_flag, mean_x):
 
 
 def compute_formation(team_slots, mean_x, team_flag):
-    """Compute formation using K-Means clustering.
-    
-    Args:
-        team_slots: list of slot indices for this team (11 or 10 without GK)
-        mean_x: (N,) mean x positions
-        team_flag: 1 or 2
-    
-    Returns:
-        formation: str like "4-4-2", or None if insufficient players
-    """
+    from scipy.optimize import linear_sum_assignment
     if len(team_slots) < 5:
         return None
-    
-    x_coords = mean_x[team_slots].reshape(-1, 1)
-    
-    # Try K=3 and K=4
-    best_k = 3
-    best_score = -1
-    cluster_sizes = None
-    
-    for k in [3, 4]:
-        if len(team_slots) < k:
-            continue
-        
-        try:
-            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-            labels = kmeans.fit_predict(x_coords)
-            
-            # Need at least 2 samples for silhouette score
-            if len(team_slots) < 2:
-                continue
-            
-            score = silhouette_score(x_coords, labels)
-            
-            if score > best_score:
-                best_score = score
-                best_k = k
-                cluster_sizes = labels
-        except:
-            continue
-    
-    if cluster_sizes is None:
-        return None
-    
-    # Sort clusters by x coordinate
-    kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=10)
-    kmeans.fit(x_coords)
-    labels = kmeans.labels_
-    
-    # Get cluster centers and sort
-    # team1 (attacks high x): ascending x = defense→attack
-    # team2 (attacks low x): descending x = defense→attack
-    centers = kmeans.cluster_centers_.flatten()
-    center_order = np.argsort(centers)
+    x_coords = mean_x[team_slots]
     if team_flag == 2:
-        center_order = center_order[::-1]
-
-    # Count players per cluster in sorted order
-    counts = []
-    for center_idx in center_order:
-        count = (labels == center_idx).sum()
-        counts.append(str(count))
-    
-    formation = "-".join(counts)
-    return formation
+        x_coords = 1.0 - x_coords
+    best_name, best_cost = None, float("inf")
+    for name, template in FORMATION_MCQ_TEMPLATES.items():
+        if len(x_coords) != len(template):
+            continue
+        cost_matrix = np.abs(x_coords[:, np.newaxis] - np.array(template)[np.newaxis, :])
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        cost = cost_matrix[row_ind, col_ind].sum()
+        if cost < best_cost:
+            best_cost, best_name = cost, name
+    return best_name
 
 
 def get_defensive_line_label(def_line_m):

@@ -79,6 +79,8 @@ def parse_args():
                         help='自由QA用の config JSON リスト。複数指定時はモデルロード1回で全config実行')
     parser.add_argument('--phase4_base_dir', type=str, default=None,
                         help='--free_configs 使用時の出力ベースディレクトリ (例: checkpoints/RUN_TS/phase4)')
+    parser.add_argument('--stats_json', type=str, default=None,
+                        help='tracking_stats.json のパス。指定時は統計テキストをinstructionの先頭に注入')
     return parser.parse_args()
 
 
@@ -155,6 +157,11 @@ def main():
     args = parse_args()
     clips, base_dir = load_clips(args.json_path, args.max_samples, args.seed, args.max_games)
     print(f"Loaded {len(clips)} clips, running {len(TASKS)} tasks each")
+
+    tracking_stats = {}
+    if args.stats_json and Path(args.stats_json).exists():
+        with open(args.stats_json) as f:
+            tracking_stats = json.load(f)
 
     model = load_model(args.ckpt_path, args.llm_ckpt, args.device,
                        use_ans_token=args.use_ans_token,
@@ -263,7 +270,13 @@ def main():
             if not npy_path.exists():
                 continue
             tracking, mask_t = make_feat(entry, base_dir, args.context_len, args.device)
-            model.instruction = free_instruction
+            clip_id = entry.get('clip_id', '')
+            if tracking_stats and clip_id in tracking_stats:
+                from tracking.compute_tracking_stats import format_stats_text
+                stats_text = format_stats_text(tracking_stats[clip_id])
+                model.instruction = stats_text + "\n\n" + free_instruction
+            else:
+                model.instruction = free_instruction
             model._max_new_tokens = free_max_tokens
             samples = {
                 "tracking":       tracking,
@@ -277,8 +290,8 @@ def main():
             with torch.no_grad():
                 generated_list, _, _ = model(samples, validating=True)
             gen = generated_list[0] if generated_list else ""
-            free_rows.append({'clip_id': entry.get('clip_id', ''), 'instruction': free_instruction, 'generated': gen})
-            print(f"  [{entry.get('clip_id','')}] {gen[:80]}")
+            free_rows.append({'clip_id': clip_id, 'instruction': free_instruction, 'generated': gen})
+            print(f"  [{clip_id}] {gen[:80]}")
 
         out_p = Path(args.out_csv)
         free_csv = out_p.parent / (out_p.stem + '_free_qa' + out_p.suffix)
@@ -305,7 +318,13 @@ def main():
                 if not npy_path.exists():
                     continue
                 tracking, mask_t = make_feat(entry, base_dir, args.context_len, args.device)
-                model.instruction = free_instruction
+                clip_id = entry.get('clip_id', '')
+                if tracking_stats and clip_id in tracking_stats:
+                    from tracking.compute_tracking_stats import format_stats_text
+                    stats_text = format_stats_text(tracking_stats[clip_id])
+                    model.instruction = stats_text + "\n\n" + free_instruction
+                else:
+                    model.instruction = free_instruction
                 model._max_new_tokens = free_max_tokens
                 samples = {
                     'tracking':       tracking,
@@ -314,13 +333,13 @@ def main():
                     'attention_mask': torch.ones(1, 1, dtype=torch.long).to(args.device),
                     'input_ids':      torch.zeros(1, 1, dtype=torch.long).to(args.device),
                     'caption_text':   [''],
-                    'video_path':     [entry.get('clip_id', '')],
+                    'video_path':     [clip_id],
                 }
                 with torch.no_grad():
                     generated_list, _, _ = model(samples, validating=True)
                 gen = generated_list[0] if generated_list else ''
                 free_rows.append({
-                    'clip_id':     entry.get('clip_id', ''),
+                    'clip_id':     clip_id,
                     'instruction': free_instruction,
                     'generated':   gen,
                     'action':      ', '.join(ACTION_NAMES_EN.get(str(a), str(a)) for a in entry.get('action_sequence', [])),
@@ -328,7 +347,7 @@ def main():
                     'zone':        entry.get('label_zone', ''),
                     'pressure':    entry.get('label_pressure', ''),
                 })
-                print(f'  [{entry.get("clip_id","")}] {gen[:80]}')
+                print(f'  [{clip_id}] {gen[:80]}')
             out_csv_p = out_dir / 'results.csv'
             with open(out_csv_p, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'], extrasaction='ignore')

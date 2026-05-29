@@ -1,37 +1,60 @@
-# LLaVA-style Ablation Results
+# LLaVA-style Ablation Results (v1)
 
 - **データ**: SoccerNet-England-EPL 全シーズン（5ゲーム）
-- **固定条件**: LoRA なし / SENTENCE_FORMAT=1 / INSTRUCTION_DIVERSE=1 / 10エポック
-- **アブレーション軸**: init重み(Phase1 vs Phase1.5) × hub(Q-Former vs Linear) × Phase2.5(あり vs なし) × Phase2.5.1(空間補助タスク追加)
+- **固定条件**: Phase2.5あり / LoRA なし / SENTENCE_FORMAT=1 / INSTRUCTION_DIVERSE=1 / Phase2=10エポック / Phase2.5=5エポック
+- **アブレーション軸**: pool_mode（mean_pool vs player_tokens） × hub（Q-Former vs Linear）
+- **アーキテクチャ (v1)**: エンコーダ処理順を修正（temporal per-player → N-pool）/ Linear hub を per-token 射影に修正 / Phase 1 から Q-Former を除去
 
 ---
 
 ## スコア一覧
 
-> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。Judge スコアは 0-1 スケール（**GPT-4o** による 0-100 点採点を正規化、n=20）。formation/def.line は spatial_labels.json（ルールベース K-Means）を Ground Truth として使用。
->
-> **GPT-4o Judge 完了（2026-05-27）** — judge_summary.csv パス（サーバー）:
-> - `checkpoints/202605172348/phase4_init1_div1_hubqformer/judge_summary.csv` ✅
-> - `checkpoints/202605180002/phase4_init1_div1_hublinear/judge_summary.csv` ⚠️ Linear hub修正前・再実行要
-> - `checkpoints/202605180023/phase4_init1_div1_hubqformer/judge_summary.csv` ✅
-> - `checkpoints/202605180039/phase4_init1_div1_hublinear/judge_summary.csv` ⚠️ Linear hub修正前・再実行要
-> - `checkpoints/llm_baseline/judge_summary.csv` ✅
+> P2/P2.5 F1 は train-time test split（同分布）で評価。P3 F1 は学習外クリップでの推論。Judge スコアは 0-1 スケール（**GPT-4o** による 0-100 点採点を正規化、n=20）。
 
-| init | hub | P2.5 | P3 run | P2 F1↑ | P2.5 F1↑ | P3 F1↑ | formation↑ | commentary↑ | att.intent↑ | def.intent↑ | def.line↑ |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Phase1 | Q-Former | なし | 202605172348 | 0.7533 | - | 0.6691 | 0.0000 | 0.2375 | 0.0500 | 0.0000 | 0.0000 |
-| Phase1 | Q-Former | あり | 202605180023 | 0.7533 | 0.7881 | 0.6604 | 0.1875 | 0.2875 | 0.6625 | 0.2375 | 0.4375 |
-| Phase1 | Linear | なし | 202605180002 | 0.7019 | - | 0.0000 | ⚠️0.0000 | ⚠️0.0000 | ⚠️0.0000 | ⚠️0.0000 | ⚠️0.0375 |
-| Phase1 | Linear | あり | 202605180039 | 0.7019 | **0.9351** | **0.6775** | ⚠️0.2625 | ⚠️0.3250 | ⚠️0.6250 | ⚠️0.6625 | ⚠️0.0000 |
-| **LLM Baseline** | | | (metadata only) | - | - | - | **0.5875** | **0.7625** | **0.9000** | **0.9125** | **0.5125** |
-| Phase1.5 | Q-Former | なし | 202605141535 | 0.6116 | - | 0.6004 | - | - | - | - | - |
-| Phase1.5 | Q-Former | あり | - | 0.6116 | - | - | - | - | - | - | - |
-| Phase1.5 | Linear | なし | 202605141549 | 0.6516 | - | 0.0000 | - | - | - | - | - |
-| Phase1.5 | Linear | あり | - | 0.6516 | - | - | - | - | - | - |
-| Phase1 | Q-Former | P2.5.1 | 202605202300 | 0.7533 | 0.8414 | **0.8615** | - | - | - | - | - |
-| Phase1 | Linear | P2.5.1 | 202605211053 | 0.7019 | 0.8842 | 0.0000 | - | - | - | - | - |
+| pool_mode | hub | P3 run | P2 F1↑ | P2.5 F1↑ | P3 F1↑ | formation↑ | commentary↑ | att.intent↑ | def.intent↑ | def.line↑ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mean_pool | Q-Former | 202605291101 | 0.5822 | 0.6533 | **0.7059** | **0.1375** | 0.2875 | 0.6250 | 0.1750 | **0.0875** |
+| mean_pool | Linear | 202605291120 | 0.7036 | **0.7091** | 0.0444 | 0.0875 | **0.3625** | 0.6500 | 0.1375 | **0.0875** |
+| player_tokens | Q-Former | 202605290954 | 0.6984 | 0.6398 | 0.6807 | 0.0625 | 0.3000 | **0.7625** | **0.4750** | 0.0000 |
+| player_tokens | Linear | 202605291015 | **0.7133** | 0.6366 | 0.2167 | 0.0000 | 0.3250 | 0.5250 | 0.0625 | 0.0000 |
+| **LLM Baseline** | — | (metadata only) | — | — | — | 0.5875 | 0.7625 | 0.9000 | 0.9125 | 0.5125 |
 
-> ⚠️ = Linear hub修正前の実行のため再実行要。GPT-4o Judge スコアは完了後に記入。
+> **太字** = モデル側（LLM Baseline 除く）の列最高値
+
+---
+
+## 考察
+
+### P3 F1（アクション分類）
+
+- **mean_pool × Q-Former が最高（0.7059）**。encoder の時系列表現を Q-Former が効率よく cross-attend できている
+- **Linear hub は mean_pool / player_tokens ともに P3 F1 が低い**（0.04, 0.22）。Phase 2.5 後も Action 分類精度の回復が旧実験より遅い傾向
+- player_tokens × Q-Former は 0.6807 で Q-Former 系としては mean_pool と同水準
+
+### GPT-4o Judge スコア
+
+- **attacking intent**: player_tokens × Q-Former が 0.7625 で最高。N 個の選手トークンに cross-attend することで戦術意図の手がかりを保持できている
+- **defensive intent**: 同じく player_tokens × Q-Former が 0.4750 と突出。mean_pool 系は 0.14-0.18 止まり
+- **commentary**: mean_pool × Linear が 0.3625 で最高。player_tokens 系は 0.30-0.33 で大差なし
+- **formation / def.line**: 全パターンで 0.00-0.14 に留まり LLM Baseline（0.59 / 0.51）と大差。空間的絶対位置の推論は現アーキテクチャの共通課題
+
+### player_tokens の効果
+
+- att.intent / def.intent において mean_pool に対して明確な優位（+0.14〜+0.30）
+- P3 F1 は mean_pool × Q-Former とほぼ同等（0.7059 vs 0.6807）
+- → **戦術意図タスクには player_tokens × Q-Former が有効**。formation/def.line は依然として課題
+
+### Linear hub の崩壊
+
+- mean_pool × Linear: P3 F1=0.0444（推論時に出力崩壊）
+- player_tokens × Linear: P3 F1=0.2167（部分回復するも低水準）
+- Q-Former は両 pool_mode で安定。Linear は per-token 射影に修正後も Phase 2.5 だけでは汎化が不十分
+
+### LLM Baseline との比較
+
+- att.intent / def.intent で player_tokens × Q-Former が 0.76 / 0.48 まで迫る（Baseline=0.90 / 0.91）
+- commentary は最高でも 0.36（Baseline=0.76）と差が大きい
+- formation / def.line は全モデルで Baseline に遠く及ばず → TrajPrism 方式の QA 改良 or 4択タスク化が必要
 
 ---
 
@@ -50,88 +73,6 @@
 | LLaMA-3.1-8B-Instruct | zero-shot | 25.0% | 60.0% | 33.3% | 49.5% | Judge 不採用 |
 | LLaMA-3-8B-Instruct | few-shot | 50.0% | 40.0% | 33.3% | 43.0% | D2 悪化・不採用 |
 
-※ GPT-4o の D3 が低いのは D3Q4 の回答が空文字だったため（JSON 生成が途切れた可能性）。実際の理解力はより高いと考えられる。
+※ GPT-4o の D3 が低いのは D3Q4 の回答が空文字だったため（JSON 生成が途切れた可能性）。
 
-### D1 個別結果（LLaMA-3-8B, zero-shot）
-- Q1 バックパス間接FK: ✓（"Indirect free kick to the opposing team."）
-- Q2 スローイン・オフサイド例外: ✗（誤ってオフサイドと判定）
-- Q3 ペナルティエリアライン上のファウル: ✗（"indirect free kick"と回答、正解は penalty）
-- Q4 ゴールキック→自陣ゴール: ✗（"indirect free kick"と回答、正解は corner kick）
-
-### D2 個別結果（LLaMA-3-8B, zero-shot, MCQ）
-- Q1 4-1-4-1: ✗（D=4-2-3-1 を選択、正解は B=4-1-4-1）
-- Q2 3-4-2-1: ✓（C=3-4-2-1 を正しく選択）
-- Q3 4-1-2-1-2: ✓（D=4-1-2-1-2 を正しく選択）
-- Q4 4-2-3-1: ✓（C=4-2-3-1 を正しく選択）
-- Q5 3-5-2: ✗（C=4-2-3-1 を選択、正解は D=3-5-2）
-
-### D2 個別結果（LLaMA-3.1-8B, zero-shot, MCQ）
-- Q1 4-1-4-1: ✗（D=4-2-3-1 を選択）
-- Q2 3-4-2-1: ✓（C=3-4-2-1 を正しく選択）
-- Q3 4-1-2-1-2: ✓（D=4-1-2-1-2 を正しく選択）
-- Q4 4-2-3-1: ✓（"C)" と回答、C=4-2-3-1 にマッチ）
-- Q5 3-5-2: ✗（B=4-3-3 を選択）
-
-### 考察
-- **GPT-4o が SUS=100%（D1・D2 完全正答）**で圧倒。Judge として採用の根拠となる定量的証拠
-- **LLaMA-3-8B と LLaMA-3.1-8B は MCQ では同スコア（SUS=49.5%）**。旧 regex で 3.1 が低く見えたのは冗長回答による偽陰性であり、実力は同等
-- **3バック系フォーメーション（Q1: 4-1-4-1、Q5: 3-5-2）が両 LLaMA モデル共通の弱点**。4バックに引きずられる傾向
-- **Few-shot は MCQ でも D2 を悪化**させる（60%→40%）。Zero-shot が一貫して優位
-- **D1 は LLaMA 両モデルとも 25%**。Q3・Q4 でルール理解の穴あり（penalty/corner kick を indirect FK と誤答）
-- **結論**: 8B クラス LLM は SUS≈50% でランダムに近く、Judge として不十分。GPT-4o（SUS=100%）を Judge に採用することを定量的に正当化できた
-
----
-
-## Free QA 品質
-
-> ○=正確 / △=概ね正確だが形式に問題あり / △B=形式追従・内容幻覚 / ×=空文字・崩壊・定型文固定
-
-| init | hub | P2.5 | P3 run | formation | commentary | first_action | 総合 |
-|---|---|---|---|---|---|---|---|
-| Phase1 | Q-Former | なし | 202605141356 | × | × (定型文) | × (定型文) | × |
-| Phase1 | Q-Former | あり | 202605142333 | × | △B | △ | △B |
-| Phase1 | Linear | なし | 202605141507 | × | × (崩壊) | × (崩壊) | × |
-| Phase1 | Linear | あり | 202605142214 | △ | **○** | △ | **○** |
-| Phase1.5 | Q-Former | なし | 202605141535 | × (空) | × (定型文) | × (空) | × |
-| Phase1.5 | Q-Former | あり | - | - | - | - | - |
-| Phase1.5 | Linear | なし | 202605141549 | × | × (崩壊) | × (崩壊) | × |
-| Phase1.5 | Linear | あり | - | - | - | - | - |
-
----
-
-## 考察
-
-### Linear hub の崩壊と復活
-
-- Phase2のみ（actionラベル学習）では hublinear の P3 F1=0.0000。出力は "and learn, and learn..." の繰り返し。
-- 原因: mean pool で (B, T, 768) → (B, 768) に潰すと視覚情報がほぼ消え、LLM がハルシネーションループに入る。
-- **Phase2.5 QA学習を加えると完全復活**（F1: 0.0000 → 0.6775）。QA多様データが繰り返し崩壊への正則化として機能した可能性。
-
-### 以前の実験との比較（docs/result/README.md）
-
-- 以前の全実験で commentary が○になったことは一度もない（LoRAなし→全件定型文、LoRA rank=4→全件幻覚）
-- **今回 hublinear + Phase2.5（LoRAなし）が commentary 初の○を達成**
-- Phase2.5 QA学習が「トラッキング → 自由文生成」のブレークスルーをもたらした
-
-### hubqformer vs hublinear（Phase2.5あり）
-
-- P3 F1: hublinear 0.6775 > hubqformer 0.6604（わずかに hublinear が上）
-- Free QA: hublinear ○ vs hubqformer △B（hublinear が大きく上回る）
-- hubqformer + Phase2.5 では commentary にアクションラベル形式が混入（"performing trap, pass, clearance..."）、formation で別タスク回答が混入するなどフォーマット退行が起きている
-- **Phase2.5なしは全パターン×**: Q-Formerも含め、質問の種類に関係なくアクション定型文を出力するだけ。Phase2.5が Free QA 汎化の必須条件。
-- **現時点のベスト構成: Phase1 + Linear + Phase2.5**
-
-### Phase2.5.1（空間補助タスク追加）の効果
-
-- **学習設定**: Phase2.5 重みから継続学習、allowed_tasks=action/formation/def_line + QA、5エポック
-- **Q-Former**: P3 F1 が 0.6604 → **0.8615** に大幅改善。formation 0.05→**0.1875**、commentary 0.3375→**0.4625**、def.line 0.1875→**0.2000** と全タスクで改善
-- **Linear**: 壊滅的忘却が発生。P3 F1=0.0000、FreeQA は全タスク崩壊（ランダムな文字列を生成）
-- **結論**: Q-Former は空間タスク追加に頑健で有効。Linear は脆弱で QA 能力を喪失しやすい。以降の実験は Q-Former を採用する
-
-### LLM Baseline との比較（連続スコア版、n=20）
-
-- **attacking/defensive_intent**: Q-Former+P2.5 が baseline と同スコア（0.7500）、Linear+P2.5 も 0.6750-0.7125 でほぼ同等。トラッキング特徴から戦術意図の推論ができている
-- **commentary**: Linear+P2.5 (0.6750) ≈ baseline (0.7125)。連続評価により以前のバイナリ（0.90）より厳しいスコアに。Q-Former+P2.5 は 0.3375 と大きく下回る
-- **formation**: baseline が 0.4250 でトップ（partial credit で上昇）。両モデルとも 0.0500-0.1000 に留まり、選手の空間配置推論が苦手なことが数値で明確化
-- **defensive_line**: baseline 0.2750 に対し Linear+P2.5 は 0.0000、Q-Former+P2.5 は 0.1875。formation 同様、空間的な絶対位置の推論が困難
-- **Phase2.5なし**: 5タスク全て 0.00（Linear は commentary も崩壊）。Phase2.5 が Free QA の絶対条件
+**結論**: 8B クラス LLM は SUS≈50% でランダムに近く Judge として不十分。GPT-4o（SUS=100%）を Judge に採用することを定量的に正当化できた。

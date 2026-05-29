@@ -99,6 +99,9 @@ WINDOW_SIZE           ?= 2
 TEMPERATURE           ?= 0.07
 SOCCERDATA_DIR        ?= /user/arch/ujihara/SoccerData
 USE_LLM_QA            ?= 0
+USE_MCQ               ?= 0
+TRACKING_STATS_JSON   ?=
+SPATIAL_LABELS_JSON   ?= $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -157,6 +160,7 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         eval_phase4_judge \
         eval_llm_baseline eval_llm_baseline_judge \
         eval_soccer_understanding \
+        compute_tracking_stats eval_mcq \
         check smoke smoke_phase2 clean
 
 build:
@@ -466,6 +470,24 @@ compute_spatial_labels:
 	    --max_games $(MAX_GAMES) \
 	    --save_interval $(SAVE_INTERVAL)
 
+# ゾーン別人数・重心・スプレッド統計計算（Dual-Pathway用）
+# 使い方: make compute_tracking_stats
+compute_tracking_stats:
+	python tracking/compute_tracking_stats.py \
+	    --clips_json $(SD_JSON) \
+	    --base_dir $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG) \
+	    --out_json $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/tracking_stats.json \
+	    --max_games $(MAX_GAMES)
+
+# MCQ精度評価（formation / def_line）
+# 使い方: make eval_mcq PHASE4_ALL_DIR=checkpoints_v1/RUN_TS/phase4_TAG
+MCQ_CONFIGS ?= configs/qa_formation_mcq.json configs/qa_defensive_line_mcq.json
+eval_mcq:
+	python tracking/eval_mcq.py \
+	    --phase4_dir $(PHASE4_ALL_DIR) \
+	    --spatial_labels $(SPATIAL_LABELS_JSON) \
+	    --configs $(MCQ_CONFIGS)
+
 train_trajectory_regression:
 	mkdir -p $(PHASE1_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory_regression.py \
@@ -614,6 +636,9 @@ inference_free_qa:
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE4_DIR)/inference.log
 
+_FORMATION_CONFIG  = $(if $(filter 1,$(USE_MCQ)),configs/qa_formation_mcq.json,configs/qa_formation.json)
+_DEF_LINE_CONFIG   = $(if $(filter 1,$(USE_MCQ)),configs/qa_defensive_line_mcq.json,configs/qa_defensive_line.json)
+
 inference_phase4_all:
 	mkdir -p $(PHASE4_ALL_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
@@ -628,9 +653,10 @@ inference_phase4_all:
 	    --num_beams $(NUM_BEAMS) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    --tasks none \
-	    --free_configs configs/qa_formation.json configs/qa_commentary.json configs/qa_attacking_intent.json configs/qa_defensive_intent.json configs/qa_defensive_line.json \
+	    --free_configs $(_FORMATION_CONFIG) configs/qa_commentary.json configs/qa_attacking_intent.json configs/qa_defensive_intent.json $(_DEF_LINE_CONFIG) \
 	    --phase4_base_dir $(PHASE4_ALL_DIR) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
+	    $(if $(TRACKING_STATS_JSON),--stats_json $(TRACKING_STATS_JSON),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE4_ALL_DIR)/inference.log
 
