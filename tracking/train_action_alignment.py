@@ -372,6 +372,9 @@ def main():
                         help="MultiTaskDataset の llm_qa フィールドを学習に使う")
     parser.add_argument('--use_linear', action='store_true',
                         help='Q-FormerのかわりにLinear projectionを使う')
+    parser.add_argument('--pool_mode', type=str, default='mean_pool',
+                        choices=['mean_pool', 'player_tokens'],
+                        help='Encoder pooling mode')
     parser.add_argument('--spatial_labels', type=str, default=None,
                         help='spatial_labels.json のパス。指定時に空間補助タスクを有効化')
     args = parser.parse_args()
@@ -428,6 +431,7 @@ def main():
         use_chat_template=args.use_chat_template,
         open_visual_encoder=args.open_visual_encoder,
         use_linear=args.use_linear,
+        pool_mode=args.pool_mode,
         num_players=23,
         in_features=5,
         d_model=256,

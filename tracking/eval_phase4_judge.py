@@ -4,41 +4,38 @@ import argparse
 import csv
 import json
 import re
+import time
 from pathlib import Path
 
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+import requests as _requests
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Phase 4 Free QA: LLM-as-a-Judge evaluation")
     parser.add_argument("--phase4_dir", type=str, required=True,
                         help="Phase 4 出力ディレクトリ（例: checkpoints/RUN_TS/phase4_TAG）")
-    parser.add_argument("--llm_ckpt", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct",
-                        help="Judge LLM のチェックポイント")
+    parser.add_argument("--model", type=str, default="gpt-4o",
+                        help="Judge LLM モデル名（例: gpt-4o, gpt-4o-mini）")
+    parser.add_argument("--base_url", type=str, default="https://models.inference.ai.azure.com",
+                        help="API base URL。GitHub Models: https://models.inference.ai.azure.com / OpenAI: https://api.openai.com/v1")
+    parser.add_argument("--api_key", type=str, default=None,
+                        help="API キー。省略時は環境変数 GITHUB_TOKEN または OPENAI_API_KEY を使用")
     parser.add_argument("--configs", nargs='+', default=None,
                         help="評価する config 名のリスト（例: qa_formation qa_commentary qa_first_action）")
-    parser.add_argument("--device", type=str, default="cuda",
-                        help="cuda / cpu")
-    parser.add_argument("--gpu", type=int, default=0,
-                        help="使用 GPU 番号")
     parser.add_argument("--spatial_labels", type=str,
                         default="soccerdata_clips/fps1_sec30_onball_step5s/spatial_labels.json",
                         help="spatial_labels.json のパス")
     return parser.parse_args()
 
 
-def load_judge_model(llm_ckpt, device):
-    """Judge LLM をロード"""
-    print(f"Loading Judge LLM: {llm_ckpt}")
-    tokenizer = AutoTokenizer.from_pretrained(llm_ckpt)
-    model = AutoModelForCausalLM.from_pretrained(
-        llm_ckpt,
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-    model.eval()
-    return tokenizer, model
+def setup_client(base_url: str, api_key: str = None) -> dict:
+    """API クライアント設定を返す（標準 urllib のみ使用、外部依存なし）"""
+    if api_key is None:
+        import os
+        api_key = os.environ.get("GITHUB_TOKEN") or os.environ.get("OPENAI_API_KEY")
+        if api_key is None:
+            raise ValueError("API key not found. Set GITHUB_TOKEN or OPENAI_API_KEY env var, or pass --api_key")
+    return {"base_url": base_url.rstrip("/"), "api_key": api_key}
 
 
 def build_judge_prompt(entry, spatial=None, config_name=""):
@@ -120,39 +117,64 @@ def extract_json_from_text(text):
     return None
 
 
-def judge_entry(entry, tokenizer, model, device, spatial=None, config_name=""):
+def judge_entry(entry, client, model_name, spatial=None, config_name=""):
     """エントリを評価"""
     prompt = build_judge_prompt(entry, spatial=spatial, config_name=config_name)
     
-    # プロンプトをトークン化
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    # API 呼び出し（リトライ対応）
+    response_text = None
+    score = 0.0
+    reason = "api error"
     
-    # LLM で生成
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=128,
-            temperature=0,  # greedy
-            do_sample=False,
-        )
+    url = f"{client['base_url']}/chat/completions"
+    body = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "You are a strict evaluator of soccer video QA model outputs. Always output valid JSON only, no other text."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 128,
+        "temperature": 0
+    }
+    headers = {"Authorization": f"Bearer {client['api_key']}"}
+
+    for attempt in range(5):
+        try:
+            resp = _requests.post(url, json=body, headers=headers, timeout=30)
+            if resp.status_code == 429:
+                print(f"    HTTP 429 (attempt {attempt+1}/5), waiting 60s...")
+                time.sleep(60)
+                continue
+            if resp.status_code != 200:
+                wait = 5
+                print(f"    HTTP {resp.status_code} (attempt {attempt+1}/5), waiting {wait}s...")
+                time.sleep(wait)
+                if attempt == 4:
+                    return None, f"api error: HTTP {resp.status_code}"
+                continue
+            response_text = resp.json()["choices"][0]["message"]["content"].strip()
+            break
+        except Exception as e:
+            if attempt < 4:
+                time.sleep(5)
+                continue
+            return None, f"api error: {e}"
     
-    # 生成テキストをデコード
-    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    
-    # 最後の部分（プロンプト以降）を抽出
-    response_text = generated_text[len(prompt):].strip() if len(generated_text) > len(prompt) else ""
-    
+    if response_text is None:
+        return None, "api error: no response"
+
     # JSON を抽出
-    json_obj = extract_json_from_text(response_text)
-    
-    if json_obj and 'score' in json_obj and 'reason' in json_obj:
-        score = int(json_obj['score'])
-        reason = str(json_obj['reason'])
-        # 0-100 を 0-1 に正規化
-        score = max(0.0, min(1.0, score / 100.0))
-    else:
-        score = 0.0
-        reason = "parse error"
+    if response_text:
+        json_obj = extract_json_from_text(response_text)
+        
+        if json_obj and 'score' in json_obj and 'reason' in json_obj:
+            score = int(json_obj['score'])
+            reason = str(json_obj['reason'])
+            # 0-100 を 0-1 に正規化
+            score = max(0.0, min(1.0, score / 100.0))
+        else:
+            score = 0.0
+            reason = "parse error"
     
     return score, reason
 
@@ -186,9 +208,9 @@ def main():
     
     print(f"Found {len(configs)} configs: {configs}")
     
-    # Judge LLM をロード
-    tokenizer, model = load_judge_model(args.llm_ckpt, args.device)
-    device = args.device if args.device == "cpu" else f"{args.device}:{args.gpu}"
+    # OpenAI 互換 API クライアントをセットアップ
+    client = setup_client(args.base_url, args.api_key)
+    print(f"Judge model: {args.model} @ {args.base_url}")
     
     summary_data = []
     
@@ -208,26 +230,56 @@ def main():
         
         print(f"Loaded {len(entries)} entries from {json_path}")
         
+        # 既存 judge_results.json があればロードして resume
+        judge_json_path = config_dir / 'judge_results.json'
+        existing = {}
+        if judge_json_path.exists():
+            with open(judge_json_path, 'r', encoding='utf-8') as f:
+                prev = json.load(f)
+            # モデル名が一致するエントリのみ有効とみなす
+            existing = {
+                r['clip_id']: r for r in prev
+                if r.get('judge_model') == args.model
+            }
+            print(f"  Resume: {len(existing)} valid entries already scored (model={args.model})")
+
         # 各エントリを評価
         judge_results = []
         scores = []
-        
+
         for i, entry in enumerate(entries):
             clip_id = entry.get('clip_id', '')
+            # 有効なスコアが既にあればスキップ
+            if clip_id in existing:
+                result_entry = existing[clip_id]
+                judge_results.append(result_entry)
+                scores.append(result_entry['score'])
+                continue
+
             spatial = spatial_labels.get(clip_id)
-            score, reason = judge_entry(entry, tokenizer, model, device, spatial=spatial, config_name=config_name)
-            
+            score, reason = judge_entry(entry, client, args.model, spatial=spatial, config_name=config_name)
+            time.sleep(5)  # GitHub Models: 15rpm → 4s/req + margin
+
+            if score is None:
+                print(f"    [{clip_id}] skipped (api error: {reason})")
+                continue
+
             result_entry = entry.copy()
             result_entry['score'] = score
             result_entry['reason'] = reason
+            result_entry['judge_model'] = args.model
             judge_results.append(result_entry)
             scores.append(score)
-            
+
+            # チェックポイント保存（5件ごと）
+            if (i + 1) % 5 == 0:
+                with open(judge_json_path, 'w', encoding='utf-8') as f:
+                    json.dump(judge_results, f, ensure_ascii=False, indent=2)
+
             if (i + 1) % 10 == 0 or i == len(entries) - 1:
                 print(f"  [{i+1}/{len(entries)}] processed")
         
-        # judge_results.json を保存
-        judge_json_path = config_dir / 'judge_results.json'
+        # 最終保存
         with open(judge_json_path, 'w', encoding='utf-8') as f:
             json.dump(judge_results, f, ensure_ascii=False, indent=2)
         print(f"Saved judge_results.json: {judge_json_path}")

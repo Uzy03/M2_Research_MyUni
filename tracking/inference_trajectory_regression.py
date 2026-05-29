@@ -84,9 +84,9 @@ def main():
     model = TrajectoryRegressionModel(
         K=K,
         N=23,
-        num_query=32,
         d_model=256,
-        num_features=5
+        num_features=5,
+        context_len=context_len,
     )
     
     # Load state dict with shape filtering

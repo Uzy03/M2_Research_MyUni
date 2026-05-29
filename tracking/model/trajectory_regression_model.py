@@ -5,27 +5,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertConfig
-from model.matchvoice_Qformer import BertLMHeadModel
 from tracking.encoder import TrackingEncoder
 
 
 class TrajectoryRegressionModel(nn.Module):
-    def __init__(self, K=5, N=23, num_query=32, d_model=256, num_features=5):
+    def __init__(self, K=5, N=23, d_model=256, num_features=5, pool_mode='mean_pool', context_len=20):
         """
         Args:
             K: Number of future frames to predict
             N: Number of players
-            num_query: Number of query tokens for Q-Former
             d_model: Dimension of internal model
             num_features: Number of features per player (e.g., x, y, confidence, etc.)
+            pool_mode: Pooling mode for encoder
+            context_len: Context length for flattening
         """
         super().__init__()
         self.K = K
         self.N = N
-        self.num_query = num_query
         
-        # Tracking encoder: processes (B, T, N, F) -> (B, T, 768)
+        # Tracking encoder: processes (B, T, N, F) -> (B, T_or_N, 768)
         self.tracking_encoder = TrackingEncoder(
             num_players=N,
             in_features=num_features,
@@ -33,27 +31,20 @@ class TrajectoryRegressionModel(nn.Module):
             nhead=4,
             num_spatial_layers=2,
             num_temporal_layers=2,
-            out_features=768
+            out_features=768,
+            pool_mode=pool_mode,
         )
         
-        # Q-Former initialization (same pattern as matchvoice_model_all_blocks.py)
-        encoder_config = BertConfig.from_pretrained('bert-base-uncased')
-        encoder_config.num_hidden_layers = 2
-        encoder_config.encoder_width = 768
-        encoder_config.add_cross_attention = True
-        encoder_config.cross_attention_freq = 1
-        encoder_config.query_length = num_query
-        
-        self.qformer = BertLMHeadModel(config=encoder_config)
-        self.query_tokens = nn.Parameter(torch.zeros(1, num_query, encoder_config.hidden_size))
-        self.query_tokens.data.normal_(mean=0.0, std=encoder_config.initializer_range)
-        
-        # Regression head: (768) -> (K, N, 2)
-        self.regression_head = nn.Sequential(
-            nn.Linear(768, 256),
-            nn.ReLU(),
-            nn.Linear(256, K * N * 2)
-        )
+        self.pool_mode = pool_mode
+        if pool_mode == 'player_tokens':
+            self.regression_head = nn.Linear(768, K * 2)
+        else:
+            input_dim = context_len * 768
+            self.regression_head = nn.Sequential(
+                nn.Linear(input_dim, 256),
+                nn.ReLU(),
+                nn.Linear(256, K * N * 2)
+            )
     
     def forward(self, tracking, mask):
         """
@@ -65,27 +56,13 @@ class TrajectoryRegressionModel(nn.Module):
             pred: (B, K, N, 2) - predicted positions for next K frames
         """
         B = tracking.shape[0]
-        
-        # Get frame-level features from tracking encoder
-        frame_feat = self.tracking_encoder(tracking, mask)  # (B, T, 768)
-        
-        # Q-Former forward pass
-        frame_atts = torch.ones(frame_feat.shape[:2], dtype=torch.long, device=frame_feat.device)
-        query = self.query_tokens.expand(B, -1, -1)
-        
-        qout = self.qformer.bert(
-            query_embeds=query,
-            encoder_hidden_states=frame_feat,
-            encoder_attention_mask=frame_atts,
-            return_dict=True,
-        ).last_hidden_state  # (B, num_query, 768)
-        
-        # Pool query tokens to get a fixed-size representation
-        pooled = qout.mean(dim=1)  # (B, 768)
-        
-        # Regression head
-        pred = self.regression_head(pooled).view(B, self.K, self.N, 2)  # (B, K, N, 2)
-        
+        frame_feat = self.tracking_encoder(tracking, mask)  # (B, T_or_N, 768)
+        if self.pool_mode == 'player_tokens':
+            pred = self.regression_head(frame_feat).view(B, self.N, self.K, 2)
+            pred = pred.permute(0, 2, 1, 3).contiguous()
+        else:
+            flat = frame_feat.reshape(B, -1)
+            pred = self.regression_head(flat).view(B, self.K, self.N, 2)
         return pred
     
     def compute_loss(self, pred, target_xy, target_mask):

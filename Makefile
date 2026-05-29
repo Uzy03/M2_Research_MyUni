@@ -38,20 +38,22 @@ REGRESSION_CSV  := results/trajectory_regression_inference.csv
 
 QA_CONFIG       ?= configs/qa_action.json
 
+# チェックポイント保存先ベースディレクトリ（v1以降は checkpoints_v1 を使用）
+CKPT_BASE             ?= checkpoints_v1
 # Experiment run directory (timestamped)
 RUN_TS     ?= $(shell date +%Y%m%d%H%M)
-RUN_DIR    ?= checkpoints/$(RUN_TS)
+RUN_DIR    ?= $(CKPT_BASE)/$(RUN_TS)
 PHASE1_DIR       = $(RUN_DIR)/phase1
 # Phase2タグ: init重み(1 or 15) × 指示多様化(0 or 1) でディレクトリを区別
 USE_LINEAR            ?= 0
-PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)$(if $(filter 1,$(USE_SPATIAL)),_spatial,)
-SHARED_PHASE1_DIR     = checkpoints/phase1
+PHASE2_TAG            = init$(if $(filter 1,$(USE_PHASE1_5)),15,1)_div$(INSTRUCTION_DIVERSE)_hub$(if $(filter 1,$(USE_LINEAR)),linear,qformer)$(if $(filter 1,$(USE_SPATIAL)),_spatial,)$(if $(filter player_tokens,$(POOL_MODE)),_ptok,)
+SHARED_PHASE1_DIR     = $(CKPT_BASE)/phase1$(if $(filter player_tokens,$(POOL_MODE)),_ptok,)
 SHARED_PHASE1_CKPT    = $(SHARED_PHASE1_DIR)/trajectory_regression.pth
-SHARED_PHASE1_5_DIR   ?= checkpoints/phase1_5
+SHARED_PHASE1_5_DIR   ?= $(CKPT_BASE)/phase1_5
 SHARED_PHASE1_5_CKPT  = $(SHARED_PHASE1_5_DIR)/encoder_contrastive.pth
-SHARED_PHASE2_DIR     = checkpoints/phase2_$(PHASE2_TAG)
+SHARED_PHASE2_DIR     = $(CKPT_BASE)/phase2_$(PHASE2_TAG)
 SHARED_PHASE2_CKPT    = $(SHARED_PHASE2_DIR)/action_alignment.pth
-SHARED_PHASE2_5_DIR   = checkpoints/phase2_5_$(PHASE2_TAG)
+SHARED_PHASE2_5_DIR   = $(CKPT_BASE)/phase2_5_$(PHASE2_TAG)
 SHARED_PHASE2_5_CKPT  = $(SHARED_PHASE2_5_DIR)/action_alignment.pth
 USE_PHASE1_5          ?= 0
 USE_PHASE2_5          ?= 0
@@ -69,6 +71,7 @@ PHASE2_5_CKPT    = $(PHASE2_5_DIR)/action_alignment.pth
 QA_CSV           = $(PHASE3_DIR)/$(basename $(notdir $(QA_CONFIG)))_results.csv
 MAX_GAMES       ?= 0
 USE_SPATIAL     ?= 0
+POOL_MODE       ?= mean_pool
 LAMBDA_SPATIAL  ?= 0.1
 SAVE_INTERVAL   ?= 10
 OPEN_LORA       ?= 0
@@ -96,6 +99,9 @@ WINDOW_SIZE           ?= 2
 TEMPERATURE           ?= 0.07
 SOCCERDATA_DIR        ?= /user/arch/ujihara/SoccerData
 USE_LLM_QA            ?= 0
+USE_MCQ               ?= 0
+TRACKING_STATS_JSON   ?=
+SPATIAL_LABELS_JSON   ?= $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json
 
 INSTRUCTION_ACTION_CKPT := checkpoints/instruction_action.pth
 INSTRUCTION_ACTION_CSV  := results/instruction_action_results.csv
@@ -153,6 +159,8 @@ DOCKER_RUN := docker run --rm --gpus all -e NVIDIA_DISABLE_REQUIRE=1 \
         train_phase2 train_phase2_5 train_phase2_5_shared run_ablation run_inference \
         eval_phase4_judge \
         eval_llm_baseline eval_llm_baseline_judge \
+        eval_soccer_understanding \
+        compute_tracking_stats eval_mcq \
         check smoke smoke_phase2 clean
 
 build:
@@ -462,6 +470,24 @@ compute_spatial_labels:
 	    --max_games $(MAX_GAMES) \
 	    --save_interval $(SAVE_INTERVAL)
 
+# ゾーン別人数・重心・スプレッド統計計算（Dual-Pathway用）
+# 使い方: make compute_tracking_stats
+compute_tracking_stats:
+	python tracking/compute_tracking_stats.py \
+	    --clips_json $(SD_JSON) \
+	    --base_dir $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG) \
+	    --out_json $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/tracking_stats.json \
+	    --max_games $(MAX_GAMES)
+
+# MCQ精度評価（formation / def_line）
+# 使い方: make eval_mcq PHASE4_ALL_DIR=checkpoints_v1/RUN_TS/phase4_TAG
+MCQ_CONFIGS ?= configs/qa_formation_mcq.json configs/qa_defensive_line_mcq.json
+eval_mcq:
+	python tracking/eval_mcq.py \
+	    --phase4_dir $(PHASE4_ALL_DIR) \
+	    --spatial_labels $(SPATIAL_LABELS_JSON) \
+	    --configs $(MCQ_CONFIGS)
+
 train_trajectory_regression:
 	mkdir -p $(PHASE1_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/train_trajectory_regression.py \
@@ -473,6 +499,7 @@ train_trajectory_regression:
 	    --batch_size $(BATCH_PHASE1) \
 	    --epochs $(EPOCHS_PHASE1) \
 	    --max_games $(MAX_GAMES) \
+	    --pool_mode $(POOL_MODE) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE1_DIR)/train.log
 
@@ -523,6 +550,7 @@ train_action_alignment:
 	    $(if $(filter 1,$(USE_LLM_QA)),--use_llm_qa,) \
 	    $(if $(filter 1,$(USE_LINEAR)),--use_linear,) \
 	    $(if $(filter 1,$(USE_SPATIAL)),--spatial_labels $(SOCCERDATA_OUT)/$(SOCCERDATA_CONFIG)/spatial_labels.json,) \
+	    --pool_mode $(POOL_MODE) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE2_DIR)/train.log
 
@@ -608,6 +636,9 @@ inference_free_qa:
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE4_DIR)/inference.log
 
+_FORMATION_CONFIG  = $(if $(filter 1,$(USE_MCQ)),configs/qa_formation_mcq.json,configs/qa_formation.json)
+_DEF_LINE_CONFIG   = $(if $(filter 1,$(USE_MCQ)),configs/qa_defensive_line_mcq.json,configs/qa_defensive_line.json)
+
 inference_phase4_all:
 	mkdir -p $(PHASE4_ALL_DIR)
 	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/inference_soccer_qa.py \
@@ -622,9 +653,11 @@ inference_phase4_all:
 	    --num_beams $(NUM_BEAMS) \
 	    --qformer_heads $(QFORMER_HEADS) \
 	    --tasks none \
-	    --free_configs configs/qa_formation.json configs/qa_commentary.json configs/qa_attacking_intent.json configs/qa_defensive_intent.json configs/qa_defensive_line.json \
+	    --free_configs $(_FORMATION_CONFIG) configs/qa_commentary.json configs/qa_attacking_intent.json configs/qa_defensive_intent.json $(_DEF_LINE_CONFIG) \
 	    --phase4_base_dir $(PHASE4_ALL_DIR) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
+	    $(if $(TRACKING_STATS_JSON),--stats_json $(TRACKING_STATS_JSON),) \
+	    $(if $(filter 1,$(USE_MCQ)),--spatial_labels_json $(SPATIAL_LABELS_JSON),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE4_ALL_DIR)/inference.log
 
@@ -926,13 +959,28 @@ eval_llm_baseline_judge:
 	$(MAKE) eval_llm_baseline GPU=$(GPU) CLIP_IDS_FROM=$(CLIP_IDS_FROM)
 	$(MAKE) eval_phase4_judge PHASE4_DIR=checkpoints/llm_baseline GPU=$(GPU)
 
-# 使い方: make eval_phase4_judge PHASE4_DIR=checkpoints/RUN_TS/phase4_TAG GPU=0
+# 使い方: make eval_phase4_judge PHASE4_ALL_DIR=checkpoints/RUN_TS/phase4_TAG
+# Groq 使用時:         GITHUB_TOKEN=<GROQ_API_KEY> JUDGE_BASE_URL=https://api.groq.com/openai/v1 JUDGE_MODEL=llama-3.3-70b-versatile
+# GitHub Models 使用時: GITHUB_TOKEN 環境変数が必要
+# OpenAI API 使用時:    OPENAI_API_KEY 環境変数が必要、JUDGE_BASE_URL=https://api.openai.com/v1 を指定
+JUDGE_MODEL   ?= gpt-4o
+JUDGE_BASE_URL ?= https://models.inference.ai.azure.com
 eval_phase4_judge:
-	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_phase4_judge.py \
-	    --phase4_dir $(PHASE4_DIR) \
-	    --llm_ckpt meta-llama/Meta-Llama-3-8B-Instruct \
-	    --configs $(PHASE4_CONFIGS) \
-	    --device $(DEVICE)
+	python tracking/eval_phase4_judge.py \
+	    --phase4_dir $(PHASE4_ALL_DIR) \
+	    --model $(JUDGE_MODEL) \
+	    --base_url $(JUDGE_BASE_URL) \
+	    --api_key $(GITHUB_TOKEN) \
+	    --configs $(PHASE4_CONFIGS)
+
+# 使い方: make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0 FEWSHOT=0
+#         make eval_soccer_understanding MODEL=meta-llama/Meta-Llama-3-8B-Instruct GPU=0 FEWSHOT=1
+FEWSHOT ?= 0
+eval_soccer_understanding:
+	CUDA_VISIBLE_DEVICES=$(GPU) python tracking/eval_soccer_understanding.py \
+	    --model $(MODEL) \
+	    --device $(DEVICE) \
+	    $(if $(filter 1,$(FEWSHOT)),--few_shot,)
 
 clean:
 	docker image prune -f

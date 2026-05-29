@@ -123,71 +123,31 @@ def get_gk_slot(team_flag, mean_x):
 
 
 def compute_formation(team_slots, mean_x, team_flag):
-    """Compute formation using K-Means clustering.
-    
-    Args:
-        team_slots: list of slot indices for this team (11 or 10 without GK)
-        mean_x: (N,) mean x positions
-        team_flag: 1 or 2
-    
-    Returns:
-        formation: str like "4-4-2", or None if insufficient players
-    """
     if len(team_slots) < 5:
         return None
-    
-    x_coords = mean_x[team_slots].reshape(-1, 1)
-    
-    # Try K=3 and K=4
-    best_k = 3
-    best_score = -1
-    cluster_sizes = None
-    
-    for k in [3, 4]:
-        if len(team_slots) < k:
-            continue
-        
+    x_coords = mean_x[team_slots]
+    if team_flag == 2:
+        x_coords = 1.0 - x_coords
+
+    best_k, best_score = 2, -1
+    for k in range(2, min(5, len(team_slots))):
         try:
             kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-            labels = kmeans.fit_predict(x_coords)
-            
-            # Need at least 2 samples for silhouette score
-            if len(team_slots) < 2:
+            labels = kmeans.fit_predict(x_coords.reshape(-1, 1))
+            if len(set(labels)) < k:
                 continue
-            
-            score = silhouette_score(x_coords, labels)
-            
+            score = silhouette_score(x_coords.reshape(-1, 1), labels)
             if score > best_score:
-                best_score = score
-                best_k = k
-                cluster_sizes = labels
-        except:
+                best_score, best_k = score, k
+        except Exception:
             continue
-    
-    if cluster_sizes is None:
-        return None
-    
-    # Sort clusters by x coordinate
-    kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=10)
-    kmeans.fit(x_coords)
-    labels = kmeans.labels_
-    
-    # Get cluster centers and sort
-    # team1 (attacks high x): ascending x = defense→attack
-    # team2 (attacks low x): descending x = defense→attack
-    centers = kmeans.cluster_centers_.flatten()
-    center_order = np.argsort(centers)
-    if team_flag == 2:
-        center_order = center_order[::-1]
 
-    # Count players per cluster in sorted order
-    counts = []
-    for center_idx in center_order:
-        count = (labels == center_idx).sum()
-        counts.append(str(count))
-    
-    formation = "-".join(counts)
-    return formation
+    kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(x_coords.reshape(-1, 1))
+    centers = kmeans.cluster_centers_.flatten()
+    sorted_indices = np.argsort(centers)
+    counts = [int(np.sum(labels == i)) for i in sorted_indices]
+    return "-".join(str(c) for c in counts)
 
 
 def get_defensive_line_label(def_line_m):

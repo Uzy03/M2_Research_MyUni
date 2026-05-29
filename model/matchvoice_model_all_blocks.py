@@ -82,7 +82,7 @@ class matchvoice_model_all_blocks(nn.Module):
         self.open_llm_decoder = open_llm_decoder
         # print("AA", open_llm_decoder)
         self.llama_model = AutoModelForCausalLM.from_pretrained(llm_ckpt, torch_dtype=torch.float16)
-        self.llama_model.resize_token_embeddings(len(self.tokenizer))
+        self.llama_model.resize_token_embeddings(len(self.tokenizer), mean_resizing=False)
         self.use_ans_token = use_ans_token
         self.ans_token_id = self.tokenizer.convert_tokens_to_ids("<ANS>")
         self.use_chat_template = use_chat_template
@@ -237,9 +237,7 @@ class matchvoice_model_all_blocks(nn.Module):
         frame_hidden_state =  einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h',b=batch_size,t=time_length)
         frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(frame_hidden_state)
         if self.use_linear:
-            # (B, T*Q, H) -> mean pool -> (B, H) -> llama_proj -> (B, 1, llm_hidden)
-            video_feat = frame_hidden_state.mean(dim=1)
-            inputs_llama = self.llama_proj(video_feat).unsqueeze(1)
+            inputs_llama = self.llama_proj(frame_hidden_state)  # (B, T_or_N, llm_hidden)
         else:
             if self.qformer_heads > 1:
                 head_outputs = []

@@ -137,6 +137,9 @@ def main():
         default=0,
         help="Cap total samples (0=all). Useful for smoke tests.",
     )
+    parser.add_argument('--pool_mode', type=str, default='mean_pool',
+                        choices=['mean_pool', 'player_tokens'],
+                        help='Encoder pooling mode')
 
     args = parser.parse_args()
 
@@ -179,9 +182,10 @@ def main():
     model = TrajectoryRegressionModel(
         K=args.K,
         N=23,
-        num_query=32,
         d_model=256,
-        num_features=5
+        num_features=5,
+        pool_mode=args.pool_mode,
+        context_len=args.context_len,
     )
     model.to(args.device)
     print(f"Model initialized and moved to {args.device}")
