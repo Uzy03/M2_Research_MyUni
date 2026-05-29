@@ -16,13 +16,6 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from tqdm import tqdm
 
-FORMATION_MCQ_TEMPLATES = {
-    "4-4-2":   [0.25]*4 + [0.50]*4 + [0.75]*2,
-    "4-3-3":   [0.25]*4 + [0.50]*3 + [0.75]*3,
-    "3-5-2":   [0.25]*3 + [0.50]*5 + [0.75]*2,
-    "4-2-3-1": [0.20]*4 + [0.40]*2 + [0.60]*3 + [0.80]*1,
-}
-
 
 def load_tracking_data(npy_path, mask_path):
     """Load tracking data and mask.
@@ -130,22 +123,31 @@ def get_gk_slot(team_flag, mean_x):
 
 
 def compute_formation(team_slots, mean_x, team_flag):
-    from scipy.optimize import linear_sum_assignment
     if len(team_slots) < 5:
         return None
     x_coords = mean_x[team_slots]
     if team_flag == 2:
         x_coords = 1.0 - x_coords
-    best_name, best_cost = None, float("inf")
-    for name, template in FORMATION_MCQ_TEMPLATES.items():
-        if len(x_coords) != len(template):
+
+    best_k, best_score = 2, -1
+    for k in range(2, min(5, len(team_slots))):
+        try:
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(x_coords.reshape(-1, 1))
+            if len(set(labels)) < k:
+                continue
+            score = silhouette_score(x_coords.reshape(-1, 1), labels)
+            if score > best_score:
+                best_score, best_k = score, k
+        except Exception:
             continue
-        cost_matrix = np.abs(x_coords[:, np.newaxis] - np.array(template)[np.newaxis, :])
-        row_ind, col_ind = linear_sum_assignment(cost_matrix)
-        cost = cost_matrix[row_ind, col_ind].sum()
-        if cost < best_cost:
-            best_cost, best_name = cost, name
-    return best_name
+
+    kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(x_coords.reshape(-1, 1))
+    centers = kmeans.cluster_centers_.flatten()
+    sorted_indices = np.argsort(centers)
+    counts = [int(np.sum(labels == i)) for i in sorted_indices]
+    return "-".join(str(c) for c in counts)
 
 
 def get_defensive_line_label(def_line_m):

@@ -657,6 +657,7 @@ inference_phase4_all:
 	    --phase4_base_dir $(PHASE4_ALL_DIR) \
 	    $(if $(filter 1,$(SENTENCE_FORMAT)),--sentence_format,) \
 	    $(if $(TRACKING_STATS_JSON),--stats_json $(TRACKING_STATS_JSON),) \
+	    $(if $(filter 1,$(USE_MCQ)),--spatial_labels_json $(SPATIAL_LABELS_JSON),) \
 	    --device $(DEVICE) \
 	    2>&1 | tee $(PHASE4_ALL_DIR)/inference.log
 

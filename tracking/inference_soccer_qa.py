@@ -44,6 +44,22 @@ def compute_rouge_l(pred, gt):
     return _rouge.score(gt, pred)['rougeL'].fmeasure
 
 
+def build_game_choices(clips_list, spatial_labels, field):
+    """ゲームごとの動的MCQ選択肢を構築する。"""
+    game_formations = {}
+    for clip in clips_list:
+        game_id = clip.get('game_id', '')
+        label = spatial_labels.get(clip['clip_id']) or {}
+        formation = label.get(field)
+        if formation:
+            game_formations.setdefault(game_id, set()).add(formation)
+    letters = 'ABCDEFGHIJ'
+    return {
+        gid: {letters[i]: f for i, f in enumerate(sorted(formations))}
+        for gid, formations in game_formations.items()
+    }
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Phase 3: Multi-task QA inference")
     parser.add_argument("--json_path",   default="soccerdata_clips/fps1_sec30_onball_step5s/clips.json")
@@ -81,6 +97,8 @@ def parse_args():
                         help='--free_configs 使用時の出力ベースディレクトリ (例: checkpoints/RUN_TS/phase4)')
     parser.add_argument('--stats_json', type=str, default=None,
                         help='tracking_stats.json のパス。指定時は統計テキストをinstructionの先頭に注入')
+    parser.add_argument('--spatial_labels_json', type=str, default=None,
+                        help='spatial_labels.json のパス。動的MCQ生成に使用')
     return parser.parse_args()
 
 
@@ -162,6 +180,11 @@ def main():
     if args.stats_json and Path(args.stats_json).exists():
         with open(args.stats_json) as f:
             tracking_stats = json.load(f)
+
+    spatial_labels = {}
+    if args.spatial_labels_json and Path(args.spatial_labels_json).exists():
+        with open(args.spatial_labels_json) as f:
+            spatial_labels = json.load(f)
 
     model = load_model(args.ckpt_path, args.llm_ckpt, args.device,
                        use_ans_token=args.use_ans_token,
@@ -306,25 +329,40 @@ def main():
         for cfg_path in args.free_configs:
             with open(cfg_path) as f:
                 free_cfg = json.load(f)
-            free_instruction = free_cfg['instruction']
+            free_instruction_template = free_cfg['instruction']
             free_max_tokens  = free_cfg.get('max_new_tokens', args.max_new_tokens)
+            dynamic_field = free_cfg.get('dynamic_choices')
             config_stem = Path(cfg_path).stem
             out_dir = base_dir_p / config_stem
             out_dir.mkdir(parents=True, exist_ok=True)
+            game_choices = {}
+            if dynamic_field and spatial_labels:
+                game_choices = build_game_choices(clips, spatial_labels, dynamic_field)
+                choices_path = out_dir / 'game_choices.json'
+                with open(choices_path, 'w', encoding='utf-8') as f:
+                    json.dump(game_choices, f, ensure_ascii=False, indent=2)
             free_rows = []
-            print(f'\n=== Free QA [{config_stem}]: {free_instruction[:60]}... ===')
+            print(f'\n=== Free QA [{config_stem}]: {free_instruction_template[:60]}... ===')
             for entry in clips:
                 npy_path = base_dir / entry['npy_path']
                 if not npy_path.exists():
                     continue
                 tracking, mask_t = make_feat(entry, base_dir, args.context_len, args.device)
                 clip_id = entry.get('clip_id', '')
+                if game_choices:
+                    game_id = entry.get('game_id', '')
+                    choices_map = game_choices.get(game_id, {})
+                    choices_str = '\n'.join(f'({letter}) {formation}' for letter, formation in sorted(choices_map.items()))
+                    effective_instruction = free_instruction_template.replace('{choices}', choices_str)
+                else:
+                    effective_instruction = free_instruction_template
+
                 if tracking_stats and clip_id in tracking_stats:
                     from tracking.compute_tracking_stats import format_stats_text
                     stats_text = format_stats_text(tracking_stats[clip_id])
-                    model.instruction = stats_text + "\n\n" + free_instruction
+                    model.instruction = stats_text + '\n\n' + effective_instruction
                 else:
-                    model.instruction = free_instruction
+                    model.instruction = effective_instruction
                 model._max_new_tokens = free_max_tokens
                 samples = {
                     'tracking':       tracking,
@@ -340,7 +378,8 @@ def main():
                 gen = generated_list[0] if generated_list else ''
                 free_rows.append({
                     'clip_id':     clip_id,
-                    'instruction': free_instruction,
+                    'game_id':     entry.get('game_id', ''),
+                    'instruction': free_instruction_template,
                     'generated':   gen,
                     'action':      ', '.join(ACTION_NAMES_EN.get(str(a), str(a)) for a in entry.get('action_sequence', [])),
                     'possession':  entry.get('label_possession', ''),
@@ -350,7 +389,7 @@ def main():
                 print(f'  [{clip_id}] {gen[:80]}')
             out_csv_p = out_dir / 'results.csv'
             with open(out_csv_p, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=['clip_id', 'instruction', 'generated'], extrasaction='ignore')
+                writer = csv.DictWriter(f, fieldnames=['clip_id', 'game_id', 'instruction', 'generated'], extrasaction='ignore')
                 writer.writeheader()
                 writer.writerows(free_rows)
             json_path = out_csv_p.with_suffix('.json')
