@@ -27,6 +27,16 @@ def extract_choice(text: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def extract_from_text(text: str, choice_map: dict) -> Optional[str]:
+    """文字抽出失敗時のフォールバック: 選択肢ラベルが直接含まれていれば正解とみなす。"""
+    text_lower = text.lower()
+    # 長いラベルを先にチェック（"very low" を "low" より先に）
+    for label in sorted(choice_map.values(), key=len, reverse=True):
+        if label.lower() in text_lower:
+            return label
+    return None
+
+
 def eval_config(phase4_dir: Path, config_name: str, spatial_labels: dict) -> dict:
     results_path = phase4_dir / config_name / 'results.json'
     if not results_path.exists():
@@ -71,10 +81,10 @@ def eval_config(phase4_dir: Path, config_name: str, spatial_labels: dict) -> dic
             choice_map = static_map
 
         choice = extract_choice(generated)
-        if choice is None:
-            total += 1
-            continue
-        pred = choice_map.get(choice)
+        if choice is not None:
+            pred = choice_map.get(choice)
+        else:
+            pred = extract_from_text(generated, choice_map)
         if pred == gt:
             correct += 1
         total += 1

@@ -1,4 +1,4 @@
 {
     "instruction": "How high is the defending team's defensive line in this soccer sequence? Choose one:\n(A) very low (under 20m from goal)\n(B) low (20-30m)\n(C) medium (30-40m)\n(D) high (40-50m)\n(E) very high (over 50m)\nAnswer with only the letter A, B, C, D, or E.",
-    "max_new_tokens": 5
+    "max_new_tokens": 40
 }

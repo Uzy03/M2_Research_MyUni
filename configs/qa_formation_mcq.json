@@ -1,5 +1,5 @@
 {
     "instruction": "What formation is the defending team using in this soccer sequence? Choose one:\n{choices}\nAnswer with only the letter.",
-    "max_new_tokens": 5,
+    "max_new_tokens": 40,
     "dynamic_choices": "formation_defend"
 }
