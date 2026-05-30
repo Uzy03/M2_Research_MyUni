@@ -4,6 +4,7 @@ import csv
 import json
 import re
 from pathlib import Path
+from typing import Optional
 
 MCQ_MAPS = {
     "qa_defensive_line_mcq": {
@@ -21,7 +22,7 @@ GT_FIELD = {
 }
 
 
-def extract_choice(text: str) -> str | None:
+def extract_choice(text: str) -> Optional[str]:
     m = re.search(r'\b([A-E])\b', text.upper())
     return m.group(1) if m else None
 
